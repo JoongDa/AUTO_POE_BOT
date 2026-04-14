@@ -24,7 +24,7 @@ lang := "zh"
 activeFunc := "config"
 opCount := 0
 hitCount := 0     ; 命中次数
-moveSpeed := 18   ; 鼠标速度 15=标准 18=快
+moveSpeed := 18   ; 鼠标速度，每轮操作动态随机 16~20
 
 ; 配置 - 统一坐标（通货+物品，所有功能共用）
 orb1X := 0, orb1Y := 0   ; 通货1
@@ -41,6 +41,10 @@ craftCols := 10, craftRows := 2
 ; 洗地图
 mapMode := 1  ; 1=点金+重铸  2=混沌石
 mapCols := 4, mapRows := 3
+
+; 累计统计（按功能）
+craftTotalOps := 0, craftTotalHits := 0
+mapTotalOps := 0, mapTotalHits := 0
 
 ; 存包 - 背包格子坐标
 invBaseX := 0, invBaseY := 0   ; 背包(0,0)
@@ -65,12 +69,9 @@ L["zh"] := Map(
     "grp_status",       "状态",
     "status_ready",     "就绪",
     "status_stopped",   "已停止",
-    "op_count",         "操作: {1}  命中: {2}  平均: {3}",
+    "op_count",         "操作: {1}  命中: {2}  命中率: {3}",
     "grp_log",          "日志",
     "pos_none",         "未设置",
-    "lbl_speed",        "速度:",
-    "speed_normal",     "标准",
-    "speed_fast",       "快速",
     "btn_record",       "记录",
     "btn_start",        "开始",
     "btn_stop",         "停止",
@@ -143,7 +144,11 @@ L["zh"] := Map(
     "log_deposit_start","开始存包 [{1}x{2}]",
     "log_deposit_done", "存包完成！共 {1} 格",
     "msg_deposit_done", "存包完成！共操作 {1} 格",
-    "msg_no_inv",       "请先记录背包坐标！"
+    "msg_no_inv",       "请先记录背包坐标！",
+    "btn_reset",        "重置",
+    "btn_save",         "保存",
+    "msg_reset",        "确认重置所有坐标和设置？",
+    "msg_saved",        "配置已保存"
 )
 
 L["en"] := Map(
@@ -159,12 +164,9 @@ L["en"] := Map(
     "grp_status",       "Status",
     "status_ready",     "Ready",
     "status_stopped",   "Stopped",
-    "op_count",         "Ops: {1}  Hits: {2}  Avg: {3}",
+    "op_count",         "Ops: {1}  Hits: {2}  Rate: {3}",
     "grp_log",          "Log",
     "pos_none",         "Not set",
-    "lbl_speed",        "Speed:",
-    "speed_normal",     "Normal",
-    "speed_fast",       "Fast",
     "btn_record",       "Record",
     "btn_start",        "Start",
     "btn_stop",         "Stop",
@@ -237,7 +239,11 @@ L["en"] := Map(
     "log_deposit_start","Start deposit [{1}x{2}]",
     "log_deposit_done", "Deposit done! {1} cells",
     "msg_deposit_done", "Deposit done! {1} cells",
-    "msg_no_inv",       "Record inventory positions first!"
+    "msg_no_inv",       "Record inventory positions first!",
+    "btn_reset",        "Reset",
+    "btn_save",         "Save",
+    "msg_reset",        "Reset all positions and settings?",
+    "msg_saved",        "Config saved"
 )
 
 T(key, p1 := "", p2 := "", p3 := "", p4 := "") {
@@ -418,12 +424,11 @@ btnDepStop := myGui.Add("Button", "x" colL + 155 " y" depY " w145 h28 Hidden", T
 btnDepStop.OnEvent("Click", OnDepositStop)
 btnDepStop.Enabled := false
 
-; --- 速度选择 (公共) ---
-speedY := 290
-myGui.Add("Text", "x" midX + 10 " y" speedY + 3, T("lbl_speed"))
-ddlSpeed := myGui.Add("DropDownList", "x" midX + 50 " y" speedY " w80", [T("speed_normal"), T("speed_fast")])
-ddlSpeed.Value := 2
-ddlSpeed.OnEvent("Change", OnSpeedChange)
+; --- 保存/重置按钮 (仅配置面板显示) ---
+btnSave := myGui.Add("Button", "x" midX + 10 " y290 w80 h25", T("btn_save"))
+btnSave.OnEvent("Click", OnSave)
+btnReset := myGui.Add("Button", "x" midX + 100 " y290 w80 h25", T("btn_reset"))
+btnReset.OnEvent("Click", OnReset)
 
 ; --- 状态栏 ---
 statusY := 318
@@ -443,7 +448,7 @@ myGui.OnEvent("Close", OnGuiClose)
 myGui.Show("w710 h" statusY + 50)
 
 ; 控件分组
-configControls := [lblOrb1, edtOrb1Pos, txtOrb1Qty, btnSetOrb1, lblOrb2, edtOrb2Pos, txtOrb2Qty, btnSetOrb2, lblOrb3, edtOrb3Pos, txtOrb3Qty, btnSetOrb3, lblBase, edtBasePos, btnSetBase, lblP01, edtP01Pos, btnSetP01, lblP10, edtP10Pos, btnSetP10, lblInvBase, edtInvBasePos, btnSetInvBase, lblInvP01, edtInvP01Pos, btnSetInvP01, lblInvP10, edtInvP10Pos, btnSetInvP10]
+configControls := [lblOrb1, edtOrb1Pos, txtOrb1Qty, btnSetOrb1, lblOrb2, edtOrb2Pos, txtOrb2Qty, btnSetOrb2, lblOrb3, edtOrb3Pos, txtOrb3Qty, btnSetOrb3, lblBase, edtBasePos, btnSetBase, lblP01, edtP01Pos, btnSetP01, lblP10, edtP10Pos, btnSetP10, lblInvBase, edtInvBasePos, btnSetInvBase, lblInvP01, edtInvP01Pos, btnSetInvP01, lblInvP10, edtInvP10Pos, btnSetInvP10, btnSave, btnReset]
 craftControls := [chkCraftBatch, edtCraftCols, lblCraftCols, edtCraftRows, lblCraftRows, lblCraftAffix, edtAffixes, btnCraftStart, btnCraftStop]
 mapControls := [lblMapMode, ddlMapMode, chkMapBatch, edtMapCols, lblMapCols, edtMapRows, lblMapRows, lblMapAffix, edtMapAffixes, btnMapStart, btnMapStop]
 depositControls := [lblDepGrid, edtDepCols, lblDepCols, edtDepRows, lblDepRows, btnDepStart, btnDepStop]
@@ -514,6 +519,8 @@ RefreshUI() {
     if (invBaseX = 0) edtInvBasePos.Value := T("pos_none")
     if (invP01X = 0) edtInvP01Pos.Value := T("pos_none")
     if (invP10X = 0) edtInvP10Pos.Value := T("pos_none")
+    btnSave.Text := T("btn_save")
+    btnReset.Text := T("btn_reset")
     ; 改造
     chkCraftBatch.Text := T("chk_batch")
     lblCraftCols.Text := T("lbl_cols")
@@ -726,6 +733,73 @@ OnMapBatchToggle(*) {
     edtMapRows.Enabled := isBatch
 }
 
+; ==================== 保存 / 重置 ====================
+OnSave(*) {
+    SaveConfig()
+    LogMsg(T("msg_saved"))
+    ToolTip T("msg_saved")
+    SetTimer () => ToolTip(), -1500
+}
+
+OnReset(*) {
+    global
+    if running
+        return
+    result := MsgBox(T("msg_reset"), T("title"), "OKCancel Icon!")
+    if (result != "OK")
+        return
+    ; 坐标清零
+    orb1X := 0, orb1Y := 0
+    orb2X := 0, orb2Y := 0
+    orb3X := 0, orb3Y := 0
+    baseX := 0, baseY := 0
+    p01X := 0, p01Y := 0
+    p10X := 0, p10Y := 0
+    offsetX := 0, offsetY := 0
+    invBaseX := 0, invBaseY := 0
+    invP01X := 0, invP01Y := 0
+    invP10X := 0, invP10Y := 0
+    invOffsetX := 0, invOffsetY := 0
+    ; 统计清零
+    craftTotalOps := 0, craftTotalHits := 0
+    mapTotalOps := 0, mapTotalHits := 0
+    opCount := 0, hitCount := 0
+    ; UI 恢复默认
+    edtOrb1Pos.Value := T("pos_none")
+    edtOrb2Pos.Value := T("pos_none")
+    edtOrb3Pos.Value := T("pos_none")
+    txtOrb1Qty.Value := ""
+    txtOrb2Qty.Value := ""
+    txtOrb3Qty.Value := ""
+    edtBasePos.Value := T("pos_none")
+    edtP01Pos.Value := T("pos_none")
+    edtP10Pos.Value := T("pos_none")
+    edtInvBasePos.Value := T("pos_none")
+    edtInvP01Pos.Value := T("pos_none")
+    edtInvP10Pos.Value := T("pos_none")
+    edtAffixes.Value := ""
+    edtMapAffixes.Value := ""
+    chkCraftBatch.Value := 0
+    edtCraftCols.Value := "10"
+    edtCraftRows.Value := "2"
+    ddlMapMode.Value := 1
+    chkMapBatch.Value := 0
+    edtMapCols.Value := "4"
+    edtMapRows.Value := "3"
+    edtDepCols.Value := "12"
+    edtDepRows.Value := "5"
+    poeHwnd := 0
+    edtTitle.Value := T("window_none")
+    UpdateCount()
+    UpdateStatus(T("status_ready"))
+    OnCraftBatchToggle()
+    OnMapBatchToggle()
+    SaveConfig()
+    SwitchFunc("config")
+    RefreshUI()
+    LogMsg("Reset")
+}
+
 ; ==================== 改造功能 ====================
 OnCraftStart(*) {
     global running, opCount, hitCount
@@ -802,6 +876,7 @@ OnCraftStart(*) {
             }
 
             ; 快速阶段：右键取通货 → 左键应用
+            RandomizeSpeed()
             HumanClick "Right", orb1X, orb1Y
             if (orbRemain > 0) {
                 orbRemain--
@@ -910,6 +985,7 @@ OnCraftStart(*) {
                     }
 
                     ; 快速阶段：取通货 + 应用
+                    RandomizeSpeed()
                     HumanClick "Right", curOrb.x, curOrb.y
                     if (orbRemain > 0) {
                         orbRemain--
@@ -976,11 +1052,15 @@ OnCraftStart(*) {
     btnCraftStop.Enabled := false
     edtAffixes.Enabled := true
     running := false
+    craftTotalOps += opCount
+    craftTotalHits += hitCount
 }
 
 OnCraftStop(*) {
-    global running
+    global running, craftTotalOps, craftTotalHits
     running := false
+    craftTotalOps += opCount
+    craftTotalHits += hitCount
     LogMsg(T("log_manual_stop", opCount))
     UpdateStatus(T("status_stopped"))
     btnCraftStart.Enabled := true
@@ -990,8 +1070,8 @@ OnCraftStop(*) {
 
 UpdateCount() {
     global opCount, hitCount, txtCount
-    avg := hitCount > 0 ? Round(opCount / hitCount, 1) : "-"
-    txtCount.Value := T("op_count", opCount, hitCount, avg)
+    rate := opCount > 0 ? Round(hitCount / opCount * 100, 1) "%" : "-"
+    txtCount.Value := T("op_count", opCount, hitCount, rate)
 }
 
 ; ==================== 剪贴板工具 ====================
@@ -1011,7 +1091,7 @@ GetStackSize(clip) {
 ; 读取并显示通货数量到指定控件
 ShowOrbQty(ctrl) {
     A_Clipboard := ""
-    Send "^c"
+    HumanCombo("Ctrl", "c")
     if ClipWait(0.3) {
         qty := GetStackSize(A_Clipboard)
         ctrl.Value := (qty >= 0) ? "×" qty : ""
@@ -1023,7 +1103,7 @@ ReadOrbStack(orbX, orbY) {
     BezierMove(orbX, orbY - 40)
     BezierMove(orbX, orbY)
     A_Clipboard := ""
-    Send "^c"
+    HumanCombo("Ctrl", "c")
     if ClipWait(0.3)
         return GetStackSize(A_Clipboard)
     return -1
@@ -1039,7 +1119,7 @@ ReadItemClip(ix, iy, maxRetries := 5) {
         BezierMove(ix, iy - 50)
         BezierMove(ix, iy)
         A_Clipboard := ""
-        Send "^c"
+        HumanCombo("Ctrl", "c")
         if ClipWait(0.3) {
             clip := A_Clipboard
             if !IsItemClip(clip) {
@@ -1099,10 +1179,9 @@ ThinkPause(probability := 0.01) {
         Sleep Random(200, 800)
 }
 
-OnSpeedChange(*) {
-    global moveSpeed, ddlSpeed
-    speeds := [15, 18]
-    moveSpeed := speeds[ddlSpeed.Value]
+RandomizeSpeed() {
+    global moveSpeed
+    moveSpeed := Random(16, 20)
 }
 
 StrJoin(arr, sep) {
@@ -1143,6 +1222,26 @@ BezierMove(x2, y2) {
     }
 }
 
+; 仿真按键：拆分 KeyDown/KeyUp + 高斯按住时长，模拟人手按键节奏
+HumanSend(key) {
+    Send "{" key " down}"
+    GaussSleep(45, 12, 20)
+    Send "{" key " up}"
+    GaussSleep(18, 5, 8)
+}
+
+; 仿真组合键：modifier+key，如 Ctrl+C
+; 总开销 ~15ms，仅破坏 0ms 完美时序，无体感
+HumanCombo(modifier, key) {
+    Send "{" modifier " down}"
+    GaussSleep(5, 2, 2)
+    Send "{" key " down}"
+    GaussSleep(6, 2, 2)
+    Send "{" key " up}"
+    GaussSleep(4, 2, 1)
+    Send "{" modifier " up}"
+}
+
 ; 仿真点击：贝塞尔移动 + 高斯位置抖动 + 高斯延时
 HumanClick(button, x, y) {
     jx := x + Round(GaussRand(1.5))
@@ -1158,11 +1257,11 @@ HumanCtrlClick(x, y) {
     jy := y + Round(GaussRand(1.5))
     BezierMove(jx, jy)
     Send "{Ctrl down}"
-    GaussSleep(15, 4, 8)
+    GaussSleep(5, 2, 2)
     Click "Left " jx " " jy
-    GaussSleep(15, 4, 8)
+    GaussSleep(6, 2, 2)
     Send "{Ctrl up}"
-    GaussSleep(25, 6, 12)
+    GaussSleep(8, 3, 3)
 }
 
 ; ==================== 洗地图功能 ====================
@@ -1226,6 +1325,7 @@ RollSingleMap(mx, my, row, col) {
         rollCount++
         opCount++
         UpdateCount()
+        RandomizeSpeed()
 
         if (mapMode = 1) {
             ; 点金+重铸模式: 右键点金 → 左键地图
@@ -1309,6 +1409,8 @@ OnMapStart(*) {
     }
 
     SetMapRunning(false)
+    mapTotalOps += opCount
+    mapTotalHits += hitCount
     if running {
         running := false
         SoundPlay "*48"
@@ -1321,8 +1423,10 @@ OnMapStart(*) {
 }
 
 OnMapStop(*) {
-    global running
+    global running, mapTotalOps, mapTotalHits
     running := false
+    mapTotalOps += opCount
+    mapTotalHits += hitCount
     LogMsg(T("log_manual_stop", opCount))
     UpdateStatus(T("status_stopped"))
     SetMapRunning(false)
@@ -1372,6 +1476,7 @@ OnDepositStart(*) {
                 break
             }
             UpdateStatus(T("status_depositing", row, col))
+            RandomizeSpeed()
             pos := GetInvPos(row, col)
             HumanCtrlClick(pos.x, pos.y)
             opCount++
@@ -1403,9 +1508,11 @@ OnDepositStop(*) {
 ; ==================== 配置保存/加载 ====================
 SaveConfig() {
     global
+    ; 先删旧文件，再创建空 ANSI 文件，避免 UTF-16 BOM 导致读取异常
+    try FileDelete CONFIG_FILE
+    FileOpen(CONFIG_FILE, "w", "CP0").Close()
     IniWrite lang, CONFIG_FILE, "General", "lang"
     IniWrite activeFunc, CONFIG_FILE, "General", "activeFunc"
-    IniWrite moveSpeed, CONFIG_FILE, "General", "moveSpeed"
     IniWrite edtAffixes.Value, CONFIG_FILE, "Craft", "affixes"
     IniWrite chkCraftBatch.Value, CONFIG_FILE, "Craft", "batch"
     IniWrite edtCraftCols.Value, CONFIG_FILE, "Craft", "cols"
@@ -1417,6 +1524,15 @@ SaveConfig() {
     IniWrite edtMapAffixes.Value, CONFIG_FILE, "Map", "affixes"
     IniWrite edtDepCols.Value, CONFIG_FILE, "Deposit", "cols"
     IniWrite edtDepRows.Value, CONFIG_FILE, "Deposit", "rows"
+    ; 通货数量（从 UI 读取，格式 "×20" 或 ""）
+    IniWrite txtOrb1Qty.Value, CONFIG_FILE, "Orbs", "qty1"
+    IniWrite txtOrb2Qty.Value, CONFIG_FILE, "Orbs", "qty2"
+    IniWrite txtOrb3Qty.Value, CONFIG_FILE, "Orbs", "qty3"
+    ; 累计统计
+    IniWrite craftTotalOps, CONFIG_FILE, "Stats", "craftOps"
+    IniWrite craftTotalHits, CONFIG_FILE, "Stats", "craftHits"
+    IniWrite mapTotalOps, CONFIG_FILE, "Stats", "mapOps"
+    IniWrite mapTotalHits, CONFIG_FILE, "Stats", "mapHits"
     ; 坐标
     IniWrite orb1X, CONFIG_FILE, "Coords", "orb1X"
     IniWrite orb1Y, CONFIG_FILE, "Coords", "orb1Y"
@@ -1438,68 +1554,75 @@ SaveConfig() {
     IniWrite invP10Y, CONFIG_FILE, "Coords", "invP10Y"
 }
 
+SafeInt(val) {
+    try return Integer(val)
+    return 0
+}
+
 LoadConfig() {
     global
     if !FileExist(CONFIG_FILE)
         return
     lang := IniRead(CONFIG_FILE, "General", "lang", "zh")
     activeFunc := IniRead(CONFIG_FILE, "General", "activeFunc", "config")
-    moveSpeed := Integer(IniRead(CONFIG_FILE, "General", "moveSpeed", "18"))
-    speeds := [15, 18]
-    for i, s in speeds {
-        if (s = moveSpeed) {
-            ddlSpeed.Value := i
-            break
-        }
-    }
-    edtAffixes.Value := IniRead(CONFIG_FILE, "Craft", "affixes", "Flaring|Dictator's|Merciless")
-    chkCraftBatch.Value := Integer(IniRead(CONFIG_FILE, "Craft", "batch", "0"))
+    edtAffixes.Value := IniRead(CONFIG_FILE, "Craft", "affixes", "")
+    chkCraftBatch.Value := SafeInt(IniRead(CONFIG_FILE, "Craft", "batch", "0"))
     edtCraftCols.Value := IniRead(CONFIG_FILE, "Craft", "cols", "10")
     edtCraftRows.Value := IniRead(CONFIG_FILE, "Craft", "rows", "2")
-    ddlMapMode.Value := Integer(IniRead(CONFIG_FILE, "Map", "mode", "1"))
+    ddlMapMode.Value := SafeInt(IniRead(CONFIG_FILE, "Map", "mode", "1"))
     mapMode := ddlMapMode.Value
-    chkMapBatch.Value := Integer(IniRead(CONFIG_FILE, "Map", "batch", "0"))
+    chkMapBatch.Value := SafeInt(IniRead(CONFIG_FILE, "Map", "batch", "0"))
     edtMapRows.Value := IniRead(CONFIG_FILE, "Map", "rows", "3")
     edtMapCols.Value := IniRead(CONFIG_FILE, "Map", "cols", "4")
     edtMapAffixes.Value := IniRead(CONFIG_FILE, "Map", "affixes", "")
     edtDepCols.Value := IniRead(CONFIG_FILE, "Deposit", "cols", "12")
     edtDepRows.Value := IniRead(CONFIG_FILE, "Deposit", "rows", "5")
+    ; 通货数量
+    txtOrb1Qty.Value := IniRead(CONFIG_FILE, "Orbs", "qty1", "")
+    txtOrb2Qty.Value := IniRead(CONFIG_FILE, "Orbs", "qty2", "")
+    txtOrb3Qty.Value := IniRead(CONFIG_FILE, "Orbs", "qty3", "")
+    ; 累计统计
+    craftTotalOps := SafeInt(IniRead(CONFIG_FILE, "Stats", "craftOps", "0"))
+    craftTotalHits := SafeInt(IniRead(CONFIG_FILE, "Stats", "craftHits", "0"))
+    mapTotalOps := SafeInt(IniRead(CONFIG_FILE, "Stats", "mapOps", "0"))
+    mapTotalHits := SafeInt(IniRead(CONFIG_FILE, "Stats", "mapHits", "0"))
     ; 坐标
-    orb1X := Integer(IniRead(CONFIG_FILE, "Coords", "orb1X", "0"))
-    orb1Y := Integer(IniRead(CONFIG_FILE, "Coords", "orb1Y", "0"))
-    orb2X := Integer(IniRead(CONFIG_FILE, "Coords", "orb2X", "0"))
-    orb2Y := Integer(IniRead(CONFIG_FILE, "Coords", "orb2Y", "0"))
-    orb3X := Integer(IniRead(CONFIG_FILE, "Coords", "orb3X", "0"))
-    orb3Y := Integer(IniRead(CONFIG_FILE, "Coords", "orb3Y", "0"))
-    baseX := Integer(IniRead(CONFIG_FILE, "Coords", "baseX", "0"))
-    baseY := Integer(IniRead(CONFIG_FILE, "Coords", "baseY", "0"))
-    p01X := Integer(IniRead(CONFIG_FILE, "Coords", "p01X", "0"))
-    p01Y := Integer(IniRead(CONFIG_FILE, "Coords", "p01Y", "0"))
-    p10X := Integer(IniRead(CONFIG_FILE, "Coords", "p10X", "0"))
-    p10Y := Integer(IniRead(CONFIG_FILE, "Coords", "p10Y", "0"))
-    invBaseX := Integer(IniRead(CONFIG_FILE, "Coords", "invBaseX", "0"))
-    invBaseY := Integer(IniRead(CONFIG_FILE, "Coords", "invBaseY", "0"))
-    invP01X := Integer(IniRead(CONFIG_FILE, "Coords", "invP01X", "0"))
-    invP01Y := Integer(IniRead(CONFIG_FILE, "Coords", "invP01Y", "0"))
-    invP10X := Integer(IniRead(CONFIG_FILE, "Coords", "invP10X", "0"))
-    invP10Y := Integer(IniRead(CONFIG_FILE, "Coords", "invP10Y", "0"))
-    if (orb1X != 0)
+    orb1X := SafeInt(IniRead(CONFIG_FILE, "Coords", "orb1X", "0"))
+    orb1Y := SafeInt(IniRead(CONFIG_FILE, "Coords", "orb1Y", "0"))
+    orb2X := SafeInt(IniRead(CONFIG_FILE, "Coords", "orb2X", "0"))
+    orb2Y := SafeInt(IniRead(CONFIG_FILE, "Coords", "orb2Y", "0"))
+    orb3X := SafeInt(IniRead(CONFIG_FILE, "Coords", "orb3X", "0"))
+    orb3Y := SafeInt(IniRead(CONFIG_FILE, "Coords", "orb3Y", "0"))
+    baseX := SafeInt(IniRead(CONFIG_FILE, "Coords", "baseX", "0"))
+    baseY := SafeInt(IniRead(CONFIG_FILE, "Coords", "baseY", "0"))
+    p01X := SafeInt(IniRead(CONFIG_FILE, "Coords", "p01X", "0"))
+    p01Y := SafeInt(IniRead(CONFIG_FILE, "Coords", "p01Y", "0"))
+    p10X := SafeInt(IniRead(CONFIG_FILE, "Coords", "p10X", "0"))
+    p10Y := SafeInt(IniRead(CONFIG_FILE, "Coords", "p10Y", "0"))
+    invBaseX := SafeInt(IniRead(CONFIG_FILE, "Coords", "invBaseX", "0"))
+    invBaseY := SafeInt(IniRead(CONFIG_FILE, "Coords", "invBaseY", "0"))
+    invP01X := SafeInt(IniRead(CONFIG_FILE, "Coords", "invP01X", "0"))
+    invP01Y := SafeInt(IniRead(CONFIG_FILE, "Coords", "invP01Y", "0"))
+    invP10X := SafeInt(IniRead(CONFIG_FILE, "Coords", "invP10X", "0"))
+    invP10Y := SafeInt(IniRead(CONFIG_FILE, "Coords", "invP10Y", "0"))
+    ; 坐标 → UI
+    if (orb1X != 0 || orb1Y != 0)
         edtOrb1Pos.Value := orb1X ", " orb1Y
-    if (orb2X != 0)
+    if (orb2X != 0 || orb2Y != 0)
         edtOrb2Pos.Value := orb2X ", " orb2Y
-    if (orb3X != 0)
+    if (orb3X != 0 || orb3Y != 0)
         edtOrb3Pos.Value := orb3X ", " orb3Y
-    if (baseX != 0)
+    if (baseX != 0 || baseY != 0)
         edtBasePos.Value := baseX ", " baseY
-    if (p01X != 0)
+    if (p01X != 0 || p01Y != 0)
         edtP01Pos.Value := p01X ", " p01Y
-    if (p10X != 0)
+    if (p10X != 0 || p10Y != 0)
         edtP10Pos.Value := p10X ", " p10Y
-    if (invBaseX != 0)
+    if (invBaseX != 0 || invBaseY != 0)
         edtInvBasePos.Value := invBaseX ", " invBaseY
-    if (invP01X != 0)
+    if (invP01X != 0 || invP01Y != 0)
         edtInvP01Pos.Value := invP01X ", " invP01Y
-    if (invP10X != 0)
+    if (invP10X != 0 || invP10Y != 0)
         edtInvP10Pos.Value := invP10X ", " invP10Y
     CalcOffset()
     CalcInvOffset()
