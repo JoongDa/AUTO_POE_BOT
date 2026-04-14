@@ -89,9 +89,9 @@ L["zh"] := Map(
     "lbl_orb1",         "通货1:",
     "lbl_orb2",         "通货2:",
     "lbl_orb3",         "通货3:",
-    "lbl_base",         "(0,0):",
-    "lbl_p01",          "(x+1):",
-    "lbl_p10",          "(y+1):",
+    "lbl_base",         "物品(0,0):",
+    "lbl_p01",          "物品(x+1):",
+    "lbl_p10",          "物品(y+1):",
     "log_orb_pos",      "通货{1}: {2}, {3}",
     "log_base_pos",     "基准(0,0): {1}, {2}",
     "log_p01_pos",      "(x+1): {1}, {2}",
@@ -183,9 +183,9 @@ L["en"] := Map(
     "lbl_orb1",         "Curr 1:",
     "lbl_orb2",         "Curr 2:",
     "lbl_orb3",         "Curr 3:",
-    "lbl_base",         "(0,0):",
-    "lbl_p01",          "(x+1):",
-    "lbl_p10",          "(y+1):",
+    "lbl_base",         "Item(0,0):",
+    "lbl_p01",          "Item(x+1):",
+    "lbl_p10",          "Item(y+1):",
     "log_orb_pos",      "Currency{1}: {2}, {3}",
     "log_base_pos",     "Base(0,0): {1}, {2}",
     "log_p01_pos",      "(x+1): {1}, {2}",
@@ -296,57 +296,57 @@ cfgY := panelY
 lblOrb1 := myGui.Add("Text", "x" colL " y" cfgY " w60 Right", T("lbl_orb1"))
 edtOrb1Pos := myGui.Add("Edit", "x" colE " y" cfgY - 2 " w110 h20 ReadOnly", T("pos_none"))
 txtOrb1Qty := myGui.Add("Text", "x" colE + 113 " y" cfgY " w40", "")
-btnSetOrb1 := myGui.Add("Button", "x" colB " y" cfgY - 2 " w55 h20", T("btn_record"))
+btnSetOrb1 := myGui.Add("Button", "x" colB " y" cfgY - 2 " w55 h20", "Alt+1")
 btnSetOrb1.OnEvent("Click", OnSetOrb1)
 cfgY += 22
 
 lblOrb2 := myGui.Add("Text", "x" colL " y" cfgY " w60 Right", T("lbl_orb2"))
 edtOrb2Pos := myGui.Add("Edit", "x" colE " y" cfgY - 2 " w110 h20 ReadOnly", T("pos_none"))
 txtOrb2Qty := myGui.Add("Text", "x" colE + 113 " y" cfgY " w40", "")
-btnSetOrb2 := myGui.Add("Button", "x" colB " y" cfgY - 2 " w55 h20", T("btn_record"))
+btnSetOrb2 := myGui.Add("Button", "x" colB " y" cfgY - 2 " w55 h20", "Alt+2")
 btnSetOrb2.OnEvent("Click", OnSetOrb2)
 cfgY += 22
 
 lblOrb3 := myGui.Add("Text", "x" colL " y" cfgY " w60 Right", T("lbl_orb3"))
 edtOrb3Pos := myGui.Add("Edit", "x" colE " y" cfgY - 2 " w110 h20 ReadOnly", T("pos_none"))
 txtOrb3Qty := myGui.Add("Text", "x" colE + 113 " y" cfgY " w40", "")
-btnSetOrb3 := myGui.Add("Button", "x" colB " y" cfgY - 2 " w55 h20", T("btn_record"))
+btnSetOrb3 := myGui.Add("Button", "x" colB " y" cfgY - 2 " w55 h20", "Alt+3")
 btnSetOrb3.OnEvent("Click", OnSetOrb3)
 cfgY += 26
 
 lblBase := myGui.Add("Text", "x" colL " y" cfgY " w60 Right", T("lbl_base"))
 edtBasePos := myGui.Add("Edit", "x" colE " y" cfgY - 2 " w150 h20 ReadOnly", T("pos_none"))
-btnSetBase := myGui.Add("Button", "x" colB " y" cfgY - 2 " w55 h20", T("btn_record"))
+btnSetBase := myGui.Add("Button", "x" colB " y" cfgY - 2 " w55 h20", "Alt+0")
 btnSetBase.OnEvent("Click", OnSetBase)
 cfgY += 22
 
 lblP01 := myGui.Add("Text", "x" colL " y" cfgY " w60 Right", T("lbl_p01"))
 edtP01Pos := myGui.Add("Edit", "x" colE " y" cfgY - 2 " w150 h20 ReadOnly", T("pos_none"))
-btnSetP01 := myGui.Add("Button", "x" colB " y" cfgY - 2 " w55 h20", T("btn_record"))
+btnSetP01 := myGui.Add("Button", "x" colB " y" cfgY - 2 " w55 h20", "Alt+8")
 btnSetP01.OnEvent("Click", OnSetP01)
 cfgY += 22
 
 lblP10 := myGui.Add("Text", "x" colL " y" cfgY " w60 Right", T("lbl_p10"))
 edtP10Pos := myGui.Add("Edit", "x" colE " y" cfgY - 2 " w150 h20 ReadOnly", T("pos_none"))
-btnSetP10 := myGui.Add("Button", "x" colB " y" cfgY - 2 " w55 h20", T("btn_record"))
+btnSetP10 := myGui.Add("Button", "x" colB " y" cfgY - 2 " w55 h20", "Alt+9")
 btnSetP10.OnEvent("Click", OnSetP10)
 cfgY += 26
 
 lblInvBase := myGui.Add("Text", "x" colL " y" cfgY " w60 Right", T("lbl_inv_base"))
 edtInvBasePos := myGui.Add("Edit", "x" colE " y" cfgY - 2 " w150 h20 ReadOnly", T("pos_none"))
-btnSetInvBase := myGui.Add("Button", "x" colB " y" cfgY - 2 " w55 h20", T("btn_record"))
+btnSetInvBase := myGui.Add("Button", "x" colB " y" cfgY - 2 " w55 h20", "Alt+4")
 btnSetInvBase.OnEvent("Click", OnSetInvBase)
 cfgY += 22
 
 lblInvP01 := myGui.Add("Text", "x" colL " y" cfgY " w60 Right", T("lbl_inv_p01"))
 edtInvP01Pos := myGui.Add("Edit", "x" colE " y" cfgY - 2 " w150 h20 ReadOnly", T("pos_none"))
-btnSetInvP01 := myGui.Add("Button", "x" colB " y" cfgY - 2 " w55 h20", T("btn_record"))
+btnSetInvP01 := myGui.Add("Button", "x" colB " y" cfgY - 2 " w55 h20", "Alt+5")
 btnSetInvP01.OnEvent("Click", OnSetInvP01)
 cfgY += 22
 
 lblInvP10 := myGui.Add("Text", "x" colL " y" cfgY " w60 Right", T("lbl_inv_p10"))
 edtInvP10Pos := myGui.Add("Edit", "x" colE " y" cfgY - 2 " w150 h20 ReadOnly", T("pos_none"))
-btnSetInvP10 := myGui.Add("Button", "x" colB " y" cfgY - 2 " w55 h20", T("btn_record"))
+btnSetInvP10 := myGui.Add("Button", "x" colB " y" cfgY - 2 " w55 h20", "Alt+6")
 btnSetInvP10.OnEvent("Click", OnSetInvP10)
 
 ; ===== 改造面板 (初始隐藏) =====
@@ -502,27 +502,18 @@ RefreshUI() {
     if (orb1X = 0) edtOrb1Pos.Value := T("pos_none")
     if (orb2X = 0) edtOrb2Pos.Value := T("pos_none")
     if (orb3X = 0) edtOrb3Pos.Value := T("pos_none")
-    btnSetOrb1.Text := T("btn_record")
-    btnSetOrb2.Text := T("btn_record")
-    btnSetOrb3.Text := T("btn_record")
     lblBase.Text := T("lbl_base")
     if (baseX = 0) edtBasePos.Value := T("pos_none")
-    btnSetBase.Text := T("btn_record")
     lblP01.Text := T("lbl_p01")
     lblP10.Text := T("lbl_p10")
     if (p01X = 0) edtP01Pos.Value := T("pos_none")
     if (p10X = 0) edtP10Pos.Value := T("pos_none")
-    btnSetP01.Text := T("btn_record")
-    btnSetP10.Text := T("btn_record")
     lblInvBase.Text := T("lbl_inv_base")
     lblInvP01.Text := T("lbl_inv_p01")
     lblInvP10.Text := T("lbl_inv_p10")
     if (invBaseX = 0) edtInvBasePos.Value := T("pos_none")
     if (invP01X = 0) edtInvP01Pos.Value := T("pos_none")
     if (invP10X = 0) edtInvP10Pos.Value := T("pos_none")
-    btnSetInvBase.Text := T("btn_record")
-    btnSetInvP01.Text := T("btn_record")
-    btnSetInvP10.Text := T("btn_record")
     ; 改造
     chkCraftBatch.Text := T("chk_batch")
     lblCraftCols.Text := T("lbl_cols")
@@ -781,6 +772,27 @@ OnCraftStart(*) {
         if (orbRemain >= 0)
             txtOrb1Qty.Value := "×" orbRemain
 
+        ; 预检查：使用通货前先检查物品是否已符合条件
+        if (edtAffixes.Value != "") {
+            preClip := ReadItemClip(baseX, baseY)
+            if (preClip != "") {
+                preHit := MatchAffixes(preClip, edtAffixes.Value)
+                if (preHit != "") {
+                    SoundPlay "*48"
+                    running := false
+                    hitCount++
+                    UpdateCount()
+                    LogMsg(T("log_found", 0, preHit))
+                    UpdateStatus(T("status_found"))
+                    MsgBox T("msg_found", 0, preClip)
+                    btnCraftStart.Enabled := true
+                    btnCraftStop.Enabled := false
+                    edtAffixes.Enabled := true
+                    return
+                }
+            }
+        }
+
         loop {
             if !running
                 break
@@ -874,8 +886,23 @@ OnCraftStart(*) {
                 pos := GetItemPos(row, col)
                 UpdateStatus(T("status_bc", row, col, curOrb.id))
 
-                ; 对当前物品持续改造直到命中
+                ; 预检查：使用通货前先检查物品是否已符合条件
                 itemDone := false
+                if (edtAffixes.Value != "") {
+                    preClip := ReadItemClip(pos.x, pos.y)
+                    if (preClip != "") {
+                        preHit := MatchAffixes(preClip, edtAffixes.Value)
+                        if (preHit != "") {
+                            hitCount++
+                            UpdateCount()
+                            LogMsg(T("log_bc_hit", row, col, preHit))
+                            SoundPlay "*48"
+                            itemDone := true
+                        }
+                    }
+                }
+
+                ; 对当前物品持续改造直到命中
                 while (!itemDone && running) {
                     if !CheckWindow() {
                         running := false
@@ -1116,10 +1143,10 @@ BezierMove(x2, y2) {
     }
 }
 
-; 仿真点击：贝塞尔移动 + 1~2px 位置抖动 + 高斯延时
+; 仿真点击：贝塞尔移动 + 高斯位置抖动 + 高斯延时
 HumanClick(button, x, y) {
-    jx := x + Random(-2, 2)
-    jy := y + Random(-2, 2)
+    jx := x + Round(GaussRand(1.5))
+    jy := y + Round(GaussRand(1.5))
     BezierMove(jx, jy)
     Click button " " jx " " jy
     GaussSleep(25, 6, 12)
@@ -1127,8 +1154,8 @@ HumanClick(button, x, y) {
 
 ; 仿真 Ctrl+左键：用于存包
 HumanCtrlClick(x, y) {
-    jx := x + Random(-2, 2)
-    jy := y + Random(-2, 2)
+    jx := x + Round(GaussRand(1.5))
+    jy := y + Round(GaussRand(1.5))
     BezierMove(jx, jy)
     Send "{Ctrl down}"
     GaussSleep(15, 4, 8)
@@ -1172,6 +1199,21 @@ RollSingleMap(mx, my, row, col) {
     global opCount, mapMode, hitCount
     rollCount := 0
     affixText := edtMapAffixes.Value
+
+    ; 预检查：使用通货前先检查地图是否已符合条件
+    if (affixText != "") {
+        preClip := ReadItemClip(mx, my)
+        if (preClip != "") {
+            preHit := MatchAffixes(preClip, affixText)
+            if (preHit != "") {
+                hitCount++
+                UpdateCount()
+                LogMsg(T("log_map_hit", row, col, preHit))
+                SoundPlay "*48"
+                return 0
+            }
+        }
+    }
 
     loop {
         if !running
@@ -1491,6 +1533,16 @@ RecordOrbHotkey(orbIdx, &ox, &oy, posCtrl, qtyCtrl) {
     SetTimer () => ToolTip(), -2000
 }
 
+RecordPosHotkey(&outX, &outY, posCtrl, logKey, calcFn, tipLabel) {
+    HkCapture()
+    MouseGetPos &outX, &outY
+    posCtrl.Value := outX ", " outY
+    LogMsg(T(logKey, outX, outY))
+    calcFn()
+    ToolTip tipLabel ": " outX ", " outY
+    SetTimer () => ToolTip(), -2000
+}
+
 !1:: {
     global orb1X, orb1Y
     RecordOrbHotkey(1, &orb1X, &orb1Y, edtOrb1Pos, txtOrb1Qty)
@@ -1507,69 +1559,33 @@ RecordOrbHotkey(orbIdx, &ox, &oy, posCtrl, qtyCtrl) {
 }
 
 !0:: {
-    HkCapture()
     global baseX, baseY
-    MouseGetPos &baseX, &baseY
-    edtBasePos.Value := baseX ", " baseY
-    LogMsg(T("log_base_pos", baseX, baseY))
-    CalcOffset()
-    ToolTip "(0,0): " baseX ", " baseY
-    SetTimer () => ToolTip(), -2000
+    RecordPosHotkey(&baseX, &baseY, edtBasePos, "log_base_pos", CalcOffset, "(0,0)")
 }
 
 !8:: {
-    HkCapture()
     global p01X, p01Y
-    MouseGetPos &p01X, &p01Y
-    edtP01Pos.Value := p01X ", " p01Y
-    LogMsg(T("log_p01_pos", p01X, p01Y))
-    CalcOffset()
-    ToolTip "(x+1): " p01X ", " p01Y
-    SetTimer () => ToolTip(), -2000
+    RecordPosHotkey(&p01X, &p01Y, edtP01Pos, "log_p01_pos", CalcOffset, "(x+1)")
 }
 
 !9:: {
-    HkCapture()
     global p10X, p10Y
-    MouseGetPos &p10X, &p10Y
-    edtP10Pos.Value := p10X ", " p10Y
-    LogMsg(T("log_p10_pos", p10X, p10Y))
-    CalcOffset()
-    ToolTip "(y+1): " p10X ", " p10Y
-    SetTimer () => ToolTip(), -2000
+    RecordPosHotkey(&p10X, &p10Y, edtP10Pos, "log_p10_pos", CalcOffset, "(y+1)")
 }
 
 !4:: {
-    HkCapture()
     global invBaseX, invBaseY
-    MouseGetPos &invBaseX, &invBaseY
-    edtInvBasePos.Value := invBaseX ", " invBaseY
-    LogMsg(T("log_inv_base_pos", invBaseX, invBaseY))
-    CalcInvOffset()
-    ToolTip "Inv(0,0): " invBaseX ", " invBaseY
-    SetTimer () => ToolTip(), -2000
+    RecordPosHotkey(&invBaseX, &invBaseY, edtInvBasePos, "log_inv_base_pos", CalcInvOffset, "Inv(0,0)")
 }
 
 !5:: {
-    HkCapture()
     global invP01X, invP01Y
-    MouseGetPos &invP01X, &invP01Y
-    edtInvP01Pos.Value := invP01X ", " invP01Y
-    LogMsg(T("log_inv_p01_pos", invP01X, invP01Y))
-    CalcInvOffset()
-    ToolTip "Inv(x+1): " invP01X ", " invP01Y
-    SetTimer () => ToolTip(), -2000
+    RecordPosHotkey(&invP01X, &invP01Y, edtInvP01Pos, "log_inv_p01_pos", CalcInvOffset, "Inv(x+1)")
 }
 
 !6:: {
-    HkCapture()
     global invP10X, invP10Y
-    MouseGetPos &invP10X, &invP10Y
-    edtInvP10Pos.Value := invP10X ", " invP10Y
-    LogMsg(T("log_inv_p10_pos", invP10X, invP10Y))
-    CalcInvOffset()
-    ToolTip "Inv(y+1): " invP10X ", " invP10Y
-    SetTimer () => ToolTip(), -2000
+    RecordPosHotkey(&invP10X, &invP10Y, edtInvP10Pos, "log_inv_p10_pos", CalcInvOffset, "Inv(y+1)")
 }
 
 Home:: {
