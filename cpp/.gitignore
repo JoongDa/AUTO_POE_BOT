@@ -1,0 +1,24 @@
+# Build output
+build/
+out/
+cmake-build-*/
+
+# IDE
+.vs/
+.vscode/settings.json
+.idea/
+CMakeUserPresets.json
+*.user
+
+# vcpkg (manifest mode installs here)
+vcpkg_installed/
+
+# MSVC
+*.pdb
+*.ilk
+*.exp
+*.obj
+
+# Misc
+*.tmp
+*.log
