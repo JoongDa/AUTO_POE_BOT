@@ -1,7 +1,11 @@
 #pragma once
+#include <poebot/gui/capture_service.hpp>
 #include <poebot/gui/d3d11_backend.hpp>
 #include <poebot/gui/main_window.hpp>
 #include <poebot/gui/panel.hpp>
+
+#include <poebot/hotkey/hotkey_manager.hpp>
+#include <poebot/win/window.hpp>
 
 #include <chrono>
 #include <filesystem>
@@ -25,6 +29,9 @@ private:
     void loadOrDefaultSettings();
     void saveSettingsIfDirty();
 
+    void registerHotkeys();
+    void refreshGameWindow();
+
     void renderFrame();
 
     MainWindow                              window_;
@@ -36,8 +43,14 @@ private:
     std::vector<std::unique_ptr<Panel>> panels_;
     PanelContext                        panelCtx_{};
 
+    // Phase 3.1
+    poebot::hotkey::HotkeyManager           hotkeyMgr_;
+    poebot::win::GameWindow                 gameWindow_;
+    CaptureService                          capture_;
+
     bool                                        wantExit_    = false;
     std::chrono::steady_clock::time_point       lastSaveAt_{};
+    std::chrono::steady_clock::time_point       lastWindowRefresh_{};
 };
 
 }  // namespace poebot::gui

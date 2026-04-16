@@ -2,7 +2,11 @@
 #include <poebot/config/settings.hpp>
 #include <poebot/log/log_sink.hpp>
 
+namespace poebot::win  { class GameWindow; }
+
 namespace poebot::gui {
+
+class CaptureService;
 
 // Distinguishes panels that live in the top tab bar from the log strip along
 // the bottom. Phase 3 may add more layout zones.
@@ -15,6 +19,10 @@ enum class PanelKind {
 struct PanelContext {
     poebot::config::Settings* settings = nullptr;
     poebot::log::ImGuiSink*   logSink  = nullptr;
+
+    // Phase 3.1 — window + coord capture
+    const poebot::win::GameWindow* gameWindow = nullptr;
+    CaptureService*                capture    = nullptr;
 
     // Panels set `dirty = true` when they have committed an edit to settings.
     // App::run() observes this and persists to disk (throttled).

@@ -18,14 +18,13 @@
 #include <spdlog/sinks/msvc_sink.h>
 #include <spdlog/sinks/rotating_file_sink.h>
 
-// Declared by the ImGui Win32 backend. Forwarded here so app.cpp alone needs
-// to know about it; the main window's message filter invokes it.
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND, UINT, WPARAM, LPARAM);
 
 namespace poebot::gui {
 
 namespace {
-constexpr auto kSaveDebounce = std::chrono::milliseconds(500);
+constexpr auto kSaveDebounce        = std::chrono::milliseconds(500);
+constexpr auto kWindowRefreshPeriod = std::chrono::seconds(1);
 }
 
 int App::run(HINSTANCE hInstance, int nCmdShow) {
@@ -39,7 +38,11 @@ int App::run(HINSTANCE hInstance, int nCmdShow) {
         return 1;
     }
 
-    window_.setMessageFilter([](HWND h, UINT m, WPARAM w, LPARAM l) {
+    // Message filter: WM_HOTKEY is ours; everything else goes to ImGui.
+    window_.setMessageFilter([this](HWND h, UINT m, WPARAM w, LPARAM l) {
+        if (m == WM_HOTKEY) {
+            return hotkeyMgr_.dispatch(w);
+        }
         return ImGui_ImplWin32_WndProcHandler(h, m, w, l) != 0;
     });
     window_.setResizeHandler([this](UINT w, UINT h) {
@@ -54,6 +57,10 @@ int App::run(HINSTANCE hInstance, int nCmdShow) {
     window_.show(nCmdShow);
 
     initImGui();
+    registerHotkeys();
+
+    // Wire CaptureService to game window.
+    capture_.setGameWindow(&gameWindow_);
 
     panels_.push_back(std::make_unique<panels::ConfigPanel>());
     panels_.push_back(std::make_unique<panels::CraftPanel>());
@@ -61,8 +68,10 @@ int App::run(HINSTANCE hInstance, int nCmdShow) {
     panels_.push_back(std::make_unique<panels::DepositPanel>());
     panels_.push_back(std::make_unique<panels::LogPanel>());
 
-    panelCtx_.settings = &settings_;
-    panelCtx_.logSink  = logSink_.get();
+    panelCtx_.settings   = &settings_;
+    panelCtx_.logSink    = logSink_.get();
+    panelCtx_.gameWindow = &gameWindow_;
+    panelCtx_.capture    = &capture_;
 
     while (!wantExit_) {
         if (!window_.pumpMessages()) {
@@ -70,6 +79,7 @@ int App::run(HINSTANCE hInstance, int nCmdShow) {
             break;
         }
         backend_.applyPendingResize();
+        refreshGameWindow();
         renderFrame();
         saveSettingsIfDirty();
     }
@@ -80,11 +90,14 @@ int App::run(HINSTANCE hInstance, int nCmdShow) {
         panelCtx_.dirty = false;
     }
 
+    hotkeyMgr_.clear();
     shutdownImGui();
     backend_.shutdown();
     spdlog::info("Exit");
     return 0;
 }
+
+// --- private helpers --------------------------------------------------------
 
 void App::initLogging() {
     try {
@@ -98,10 +111,9 @@ void App::initLogging() {
         std::vector<spdlog::sink_ptr> sinks{msvc_sink, file_sink, logSink_};
         auto logger = std::make_shared<spdlog::logger>("poe-bot", sinks.begin(), sinks.end());
         logger->set_level(spdlog::level::info);
-        logger->flush_on(spdlog::level::warn);
+        logger->flush_on(spdlog::level::info);
         spdlog::set_default_logger(logger);
     } catch (const spdlog::spdlog_ex& e) {
-        // Fall back to the stock default logger; never abort startup on log setup.
         spdlog::default_logger()->warn("logger init failed: {}", e.what());
     }
 }
@@ -110,8 +122,6 @@ void App::loadOrDefaultSettings() {
     settingsPath_ = std::filesystem::current_path() / "settings.json";
     settings_     = poebot::config::loadSettings(settingsPath_);
 
-    // Round-trip the default once so users have something human-readable on
-    // disk they can inspect (even though the GUI is the only supported editor).
     if (!std::filesystem::exists(settingsPath_)) {
         poebot::config::saveSettings(settings_, settingsPath_);
     }
@@ -130,6 +140,38 @@ void App::saveSettingsIfDirty() {
     }
     panelCtx_.dirty = false;
     lastSaveAt_     = now;
+}
+
+void App::registerHotkeys() {
+    hotkeyMgr_.attach(window_.hwnd());
+
+    // F8 = capture coord under cursor.
+    using Mod = poebot::hotkey::Mod;
+    int id = hotkeyMgr_.registerHotkey(Mod::NoRepeat, VK_F8, [this]() {
+        if (capture_.fire()) {
+            panelCtx_.dirty = true;
+        }
+    });
+    if (id) {
+        spdlog::info("capture hotkey F8 registered (id={})", id);
+    } else {
+        spdlog::warn("failed to register F8 — coord capture won't work");
+    }
+}
+
+void App::refreshGameWindow() {
+    auto now = std::chrono::steady_clock::now();
+    if (now - lastWindowRefresh_ < kWindowRefreshPeriod) return;
+    lastWindowRefresh_ = now;
+
+    // If the handle is stale (game was closed), clear and re-find.
+    if (!gameWindow_.valid()) {
+        gameWindow_.clear();
+        auto* prof = settings_.active();
+        if (prof && !prof->windowTitlePattern.empty()) {
+            gameWindow_.tryFind(prof->windowTitlePattern);
+        }
+    }
 }
 
 void App::initImGui() {

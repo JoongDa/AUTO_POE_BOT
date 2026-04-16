@@ -3,6 +3,10 @@ add_library(poebot-core STATIC
     src/config/settings.cpp
     src/config/settings_io.cpp
     src/log/log_sink.cpp
+    src/sys/encoding.cpp
+    src/win/window.cpp
+    src/input/cursor.cpp
+    src/hotkey/hotkey_manager.cpp
 )
 
 target_include_directories(poebot-core

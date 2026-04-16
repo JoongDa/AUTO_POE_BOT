@@ -1,20 +1,27 @@
 #include <poebot/gui/panels/config_panel.hpp>
 
 #include <poebot/coords.hpp>
+#include <poebot/gui/capture_service.hpp>
 
 #include <imgui.h>
-#include <spdlog/spdlog.h>
 
 namespace poebot::gui::panels {
 
 namespace {
 
-// Render a single coordinate row: label + current value + Reset button.
-// Returns true if the value was edited this frame.
-bool coordRow(const char* label, poebot::ClientPoint& p) {
+// Render a single coordinate row with label, value, Capture, and Reset.
+// Returns true if the value was edited.
+bool coordRow(const char* label, poebot::ClientPoint& p, PanelContext& ctx) {
     bool changed = false;
     ImGui::PushID(label);
     ImGui::AlignTextToFramePadding();
+
+    // Highlight the row when it's the currently armed capture target.
+    const bool armed = ctx.capture && ctx.capture->isArmedFor(&p);
+    if (armed) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.2f, 1.0f, 0.4f, 1.0f));
+    }
+
     ImGui::Text("%-12s", label);
     ImGui::SameLine(140.0f);
     if (poebot::isUnset(p)) {
@@ -22,13 +29,25 @@ bool coordRow(const char* label, poebot::ClientPoint& p) {
     } else {
         ImGui::Text("(%d, %d)", p.x, p.y);
     }
-    ImGui::SameLine(260.0f);
-    if (ImGui::SmallButton("Capture")) {
-        // Phase 3 will hook this to a global hotkey / mouse position reader.
-        spdlog::info("capture '{}' — not implemented in Phase 2", label);
+    if (armed) {
+        ImGui::SameLine();
+        ImGui::TextUnformatted("<< press F8 over the game window");
+        ImGui::PopStyleColor();
+    }
+
+    ImGui::SameLine(armed ? 0.0f : 260.0f);
+    if (!armed) {
+        if (ImGui::SmallButton("Capture") && ctx.capture) {
+            ctx.capture->arm(&p, label);
+        }
+    } else {
+        if (ImGui::SmallButton("Cancel") && ctx.capture) {
+            ctx.capture->cancel();
+        }
     }
     ImGui::SameLine();
     if (ImGui::SmallButton("Reset")) {
+        if (armed && ctx.capture) ctx.capture->cancel();
         p = {};
         changed = true;
     }
@@ -59,21 +78,21 @@ void ConfigPanel::render(PanelContext& ctx) {
     ImGui::TextUnformatted("Currency / orb slots");
     bool dirty = false;
     auto& c = prof->coords;
-    dirty |= coordRow("orb1",     c.orb1);
-    dirty |= coordRow("orb2",     c.orb2);
-    dirty |= coordRow("orb3",     c.orb3);
+    dirty |= coordRow("orb1",     c.orb1, ctx);
+    dirty |= coordRow("orb2",     c.orb2, ctx);
+    dirty |= coordRow("orb3",     c.orb3, ctx);
 
     ImGui::Spacing();
     ImGui::TextUnformatted("Craft / map item grid anchors");
-    dirty |= coordRow("baseItem", c.baseItem);
-    dirty |= coordRow("p01Item",  c.p01Item);
-    dirty |= coordRow("p10Item",  c.p10Item);
+    dirty |= coordRow("baseItem", c.baseItem, ctx);
+    dirty |= coordRow("p01Item",  c.p01Item,  ctx);
+    dirty |= coordRow("p10Item",  c.p10Item,  ctx);
 
     ImGui::Spacing();
     ImGui::TextUnformatted("Inventory deposit anchors");
-    dirty |= coordRow("invBase",  c.invBase);
-    dirty |= coordRow("invP01",   c.invP01);
-    dirty |= coordRow("invP10",   c.invP10);
+    dirty |= coordRow("invBase",  c.invBase, ctx);
+    dirty |= coordRow("invP01",   c.invP01,  ctx);
+    dirty |= coordRow("invP10",   c.invP10,  ctx);
 
     if (dirty) ctx.dirty = true;
 }

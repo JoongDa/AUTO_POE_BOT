@@ -3,6 +3,7 @@ add_executable(poe-bot WIN32
     src/app.cpp
     src/d3d11_backend.cpp
     src/main_window.cpp
+    src/capture_service.cpp
     src/panels/main_layout.cpp
     src/panels/config_panel.cpp
     src/panels/craft_panel.cpp

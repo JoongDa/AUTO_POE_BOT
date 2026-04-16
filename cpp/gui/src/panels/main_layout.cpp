@@ -1,5 +1,8 @@
 #include <poebot/gui/panels/main_layout.hpp>
 
+#include <poebot/gui/capture_service.hpp>
+#include <poebot/win/window.hpp>
+
 #include <imgui.h>
 
 namespace poebot::gui::panels {
@@ -44,6 +47,29 @@ void renderMenuBar(PanelContext& ctx, bool& wantExit) {
     if (ImGui::BeginMenu("App")) {
         if (ImGui::MenuItem("Exit")) wantExit = true;
         ImGui::EndMenu();
+    }
+
+    // Right-aligned status indicators.
+    {
+        // Game-window status.
+        const bool found = ctx.gameWindow && ctx.gameWindow->valid();
+        const char* wndLabel = found ? "POE: FOUND" : "POE: ---";
+        ImVec4 wndColor = found ? ImVec4(0.3f, 1.0f, 0.4f, 1.0f)
+                                : ImVec4(0.6f, 0.6f, 0.6f, 1.0f);
+        float offset = ImGui::GetWindowWidth() - ImGui::CalcTextSize(wndLabel).x - 20.0f;
+        if (ctx.capture && ctx.capture->armed()) {
+            const char* capLabel = "F8 capture";
+            offset -= ImGui::CalcTextSize(capLabel).x + 16.0f;
+            ImGui::SameLine(offset);
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.2f, 1.0f, 0.4f, 1.0f));
+            ImGui::TextUnformatted(capLabel);
+            ImGui::PopStyleColor();
+            offset += ImGui::CalcTextSize(capLabel).x + 16.0f;
+        }
+        ImGui::SameLine(offset);
+        ImGui::PushStyleColor(ImGuiCol_Text, wndColor);
+        ImGui::TextUnformatted(wndLabel);
+        ImGui::PopStyleColor();
     }
 
     ImGui::EndMenuBar();
