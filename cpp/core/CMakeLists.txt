@@ -10,8 +10,11 @@ add_library(poebot-core STATIC
     src/input/mouse.cpp
     src/input/keyboard.cpp
     src/hotkey/hotkey_manager.cpp
+    src/item/affix_matcher.cpp
     src/task/task_runner.cpp
     src/task/deposit_task.cpp
+    src/task/craft_task.cpp
+    src/task/map_task.cpp
 )
 
 target_include_directories(poebot-core

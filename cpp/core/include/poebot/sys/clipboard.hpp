@@ -9,4 +9,8 @@ namespace poebot::sys::clipboard {
 // contain text.
 std::optional<std::string> readText();
 
+// Empty the clipboard. Used before Ctrl+C so we can detect when fresh
+// content arrives.
+void clear();
+
 }  // namespace poebot::sys::clipboard

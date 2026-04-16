@@ -29,4 +29,11 @@ std::optional<std::string> readText() {
     return result;
 }
 
+void clear() {
+    if (::OpenClipboard(nullptr)) {
+        ::EmptyClipboard();
+        ::CloseClipboard();
+    }
+}
+
 }  // namespace poebot::sys::clipboard
