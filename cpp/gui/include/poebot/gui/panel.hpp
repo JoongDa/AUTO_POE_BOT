@@ -3,6 +3,7 @@
 #include <poebot/log/log_sink.hpp>
 
 namespace poebot::win  { class GameWindow; }
+namespace poebot::task { class TaskRunner; }
 
 namespace poebot::gui {
 
@@ -23,6 +24,9 @@ struct PanelContext {
     // Phase 3.1 — window + coord capture
     const poebot::win::GameWindow* gameWindow = nullptr;
     CaptureService*                capture    = nullptr;
+
+    // Phase 3.2 — task engine
+    poebot::task::TaskRunner*      taskRunner = nullptr;
 
     // Panels set `dirty = true` when they have committed an edit to settings.
     // App::run() observes this and persists to disk (throttled).

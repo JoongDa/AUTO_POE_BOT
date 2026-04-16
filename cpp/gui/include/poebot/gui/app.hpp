@@ -5,6 +5,7 @@
 #include <poebot/gui/panel.hpp>
 
 #include <poebot/hotkey/hotkey_manager.hpp>
+#include <poebot/task/task_runner.hpp>
 #include <poebot/win/window.hpp>
 
 #include <chrono>
@@ -47,6 +48,9 @@ private:
     poebot::hotkey::HotkeyManager           hotkeyMgr_;
     poebot::win::GameWindow                 gameWindow_;
     CaptureService                          capture_;
+
+    // Phase 3.2
+    poebot::task::TaskRunner                taskRunner_;
 
     bool                                        wantExit_    = false;
     std::chrono::steady_clock::time_point       lastSaveAt_{};

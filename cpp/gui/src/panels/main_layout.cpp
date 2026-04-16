@@ -34,7 +34,7 @@ void renderMenuBar(PanelContext& ctx, bool& wantExit) {
         if (ctx.settings) {
             const bool zh = ctx.settings->language == "zh";
             const bool en = ctx.settings->language == "en";
-            if (ImGui::MenuItem("中文", nullptr, zh)) {
+            if (ImGui::MenuItem("Chinese", nullptr, zh)) {
                 if (!zh) { ctx.settings->language = "zh"; ctx.dirty = true; }
             }
             if (ImGui::MenuItem("English", nullptr, en)) {

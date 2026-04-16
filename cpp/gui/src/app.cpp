@@ -72,6 +72,7 @@ int App::run(HINSTANCE hInstance, int nCmdShow) {
     panelCtx_.logSink    = logSink_.get();
     panelCtx_.gameWindow = &gameWindow_;
     panelCtx_.capture    = &capture_;
+    panelCtx_.taskRunner = &taskRunner_;
 
     while (!wantExit_) {
         if (!window_.pumpMessages()) {
@@ -80,6 +81,12 @@ int App::run(HINSTANCE hInstance, int nCmdShow) {
         }
         backend_.applyPendingResize();
         refreshGameWindow();
+
+        // Join finished tasks promptly so the thread is released.
+        if (taskRunner_.state() == poebot::task::RunnerState::Finished) {
+            taskRunner_.join();
+        }
+
         renderFrame();
         saveSettingsIfDirty();
     }
@@ -90,6 +97,8 @@ int App::run(HINSTANCE hInstance, int nCmdShow) {
         panelCtx_.dirty = false;
     }
 
+    taskRunner_.requestStop();
+    taskRunner_.join();
     hotkeyMgr_.clear();
     shutdownImGui();
     backend_.shutdown();

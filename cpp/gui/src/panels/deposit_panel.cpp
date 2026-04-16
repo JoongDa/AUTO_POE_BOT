@@ -1,6 +1,11 @@
 #include <poebot/gui/panels/deposit_panel.hpp>
 
+#include <poebot/task/deposit_task.hpp>
+#include <poebot/task/task_runner.hpp>
+#include <poebot/win/window.hpp>
+
 #include <imgui.h>
+#include <spdlog/spdlog.h>
 
 namespace poebot::gui::panels {
 
@@ -20,13 +25,52 @@ void DepositPanel::render(PanelContext& ctx) {
     ImGui::Separator();
     ImGui::TextWrapped(
         "Scans the inventory grid (%d x %d) and shift-clicks each occupied cell "
-        "into the open stash tab. Wiring comes in Phase 3.",
+        "into the open stash tab.",
         d.cols, d.rows);
 
     ImGui::Spacing();
-    ImGui::BeginDisabled(true);
-    ImGui::Button("Deposit now (Phase 3)");
-    ImGui::EndDisabled();
+
+    // Task controls
+    auto* runner = ctx.taskRunner;
+    if (runner) {
+        using poebot::task::RunnerState;
+        const auto state = runner->state();
+
+        if (state == RunnerState::Idle) {
+            if (ImGui::Button("Deposit now")) {
+                auto* prof = ctx.settings->active();
+                if (!prof) {
+                    spdlog::warn("deposit: no active profile");
+                } else if (!ctx.gameWindow || !ctx.gameWindow->valid()) {
+                    spdlog::warn("deposit: game window not found — launch POE first");
+                } else {
+                    poebot::task::DepositTask::Params p;
+                    p.gameWindow = ctx.gameWindow;
+                    p.deposit    = prof->deposit;
+                    p.coords     = prof->coords;
+                    runner->start(std::make_unique<poebot::task::DepositTask>(std::move(p)));
+                }
+            }
+        } else if (state == RunnerState::Running || state == RunnerState::Stopping) {
+            auto prog = runner->progress();
+            ImGui::Text("Depositing: %d / %d cells", prog.currentItem, prog.totalItems);
+            ImGui::ProgressBar(
+                prog.totalItems > 0
+                    ? static_cast<float>(prog.currentItem) / static_cast<float>(prog.totalItems)
+                    : 0.0f);
+
+            if (state == RunnerState::Running) {
+                if (ImGui::Button("Stop")) runner->requestStop();
+            } else {
+                ImGui::BeginDisabled(true);
+                ImGui::Button("Stopping...");
+                ImGui::EndDisabled();
+            }
+        } else {
+            // Finished — App loop will auto-join.
+            ImGui::TextUnformatted("Deposit finished.");
+        }
+    }
 
     if (dirty) ctx.dirty = true;
 }
