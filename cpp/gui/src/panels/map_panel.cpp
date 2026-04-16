@@ -29,7 +29,7 @@ void MapPanel::render(PanelContext& ctx) {
 
     // Mode radio buttons
     int mode = static_cast<int>(m.mode);
-    if (ImGui::RadioButton("炼金+洗白 (Alch+Scour)", &mode, 1)) dirty = true;
+    if (ImGui::RadioButton("点金+重铸 (Alch+Scour)", &mode, 1)) dirty = true;
     ImGui::SameLine();
     if (ImGui::RadioButton("混沌石 (Chaos)", &mode, 2)) dirty = true;
     m.mode = (mode == 2) ? poebot::config::MapMode::Chaos

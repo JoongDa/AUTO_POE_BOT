@@ -1,9 +1,11 @@
 #include <poebot/gui/panels/config_panel.hpp>
 
 #include <poebot/coords.hpp>
+#include <poebot/config/settings_io.hpp>
 #include <poebot/gui/capture_service.hpp>
 
 #include <imgui.h>
+#include <spdlog/spdlog.h>
 
 namespace poebot::gui::panels {
 
@@ -95,6 +97,34 @@ void ConfigPanel::render(PanelContext& ctx) {
     dirty |= coordRow("invP10",   c.invP10,  ctx);
 
     if (dirty) ctx.dirty = true;
+
+    // --- Save / Reset buttons -------------------------------------------
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    if (ImGui::Button("Save")) {
+        if (ctx.settingsPath) {
+            if (poebot::config::saveSettings(*ctx.settings, *ctx.settingsPath)) {
+                ctx.dirty = false;
+                spdlog::info("config: settings saved to {}", ctx.settingsPath->string());
+            }
+        }
+    }
+
+    ImGui::SameLine();
+    if (ImGui::Button("Reset profile to defaults")) {
+        if (ctx.capture) ctx.capture->cancel();
+        auto def = poebot::config::defaultProfileFor(prof->name);
+        // Preserve identity fields, overwrite coords + task settings + stats.
+        prof->coords  = def.coords;
+        prof->craft   = def.craft;
+        prof->map     = def.map;
+        prof->deposit = def.deposit;
+        prof->stats   = def.stats;
+        ctx.dirty = true;
+        spdlog::info("config: profile '{}' reset to defaults", prof->name);
+    }
 }
 
 }  // namespace poebot::gui::panels

@@ -2,6 +2,8 @@
 #include <poebot/config/settings.hpp>
 #include <poebot/log/log_sink.hpp>
 
+#include <filesystem>
+
 namespace poebot::win  { class GameWindow; }
 namespace poebot::task { class TaskRunner; }
 
@@ -18,8 +20,9 @@ enum class PanelKind {
 
 // Shared state panels can read/write during render().
 struct PanelContext {
-    poebot::config::Settings* settings = nullptr;
-    poebot::log::ImGuiSink*   logSink  = nullptr;
+    poebot::config::Settings* settings     = nullptr;
+    poebot::log::ImGuiSink*   logSink      = nullptr;
+    const std::filesystem::path* settingsPath = nullptr;
 
     // Phase 3.1 — window + coord capture
     const poebot::win::GameWindow* gameWindow = nullptr;

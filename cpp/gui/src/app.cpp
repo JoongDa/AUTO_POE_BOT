@@ -68,11 +68,12 @@ int App::run(HINSTANCE hInstance, int nCmdShow) {
     panels_.push_back(std::make_unique<panels::DepositPanel>());
     panels_.push_back(std::make_unique<panels::LogPanel>());
 
-    panelCtx_.settings   = &settings_;
-    panelCtx_.logSink    = logSink_.get();
-    panelCtx_.gameWindow = &gameWindow_;
-    panelCtx_.capture    = &capture_;
-    panelCtx_.taskRunner = &taskRunner_;
+    panelCtx_.settings     = &settings_;
+    panelCtx_.settingsPath = &settingsPath_;
+    panelCtx_.logSink      = logSink_.get();
+    panelCtx_.gameWindow   = &gameWindow_;
+    panelCtx_.capture      = &capture_;
+    panelCtx_.taskRunner   = &taskRunner_;
 
     while (!wantExit_) {
         if (!window_.pumpMessages()) {
@@ -187,6 +188,7 @@ void App::initImGui() {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
+    io.IniFilename = nullptr;  // all config lives in settings.json
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     ImGui::StyleColorsDark();
