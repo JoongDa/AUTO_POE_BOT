@@ -1,5 +1,8 @@
 add_library(poebot-core STATIC
-    src/placeholder.cpp
+    src/config/profile.cpp
+    src/config/settings.cpp
+    src/config/settings_io.cpp
+    src/log/log_sink.cpp
 )
 
 target_include_directories(poebot-core

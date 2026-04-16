@@ -1,0 +1,92 @@
+#include <poebot/gui/main_window.hpp>
+
+#include <spdlog/spdlog.h>
+
+namespace poebot::gui {
+
+MainWindow::~MainWindow() {
+    if (hwnd_) {
+        ::DestroyWindow(hwnd_);
+        hwnd_ = nullptr;
+    }
+    if (hInstance_) {
+        ::UnregisterClassW(className_, hInstance_);
+        hInstance_ = nullptr;
+    }
+}
+
+bool MainWindow::create(HINSTANCE hInstance, const wchar_t* title, int width, int height) {
+    hInstance_ = hInstance;
+
+    WNDCLASSEXW wc{};
+    wc.cbSize        = sizeof(wc);
+    wc.style         = CS_CLASSDC;
+    wc.lpfnWndProc   = &MainWindow::WndProcStatic;
+    wc.hInstance     = hInstance;
+    wc.lpszClassName = className_;
+    if (!::RegisterClassExW(&wc)) {
+        spdlog::error("RegisterClassExW failed: {}", ::GetLastError());
+        return false;
+    }
+
+    hwnd_ = ::CreateWindowExW(
+        0, className_, title, WS_OVERLAPPEDWINDOW,
+        CW_USEDEFAULT, CW_USEDEFAULT, width, height,
+        nullptr, nullptr, hInstance, this);
+    if (!hwnd_) {
+        spdlog::error("CreateWindowExW failed: {}", ::GetLastError());
+        return false;
+    }
+    return true;
+}
+
+void MainWindow::show(int nCmdShow) {
+    ::ShowWindow(hwnd_, nCmdShow);
+    ::UpdateWindow(hwnd_);
+}
+
+bool MainWindow::pumpMessages() {
+    MSG msg;
+    while (::PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
+        ::TranslateMessage(&msg);
+        ::DispatchMessageW(&msg);
+        if (msg.message == WM_QUIT) return false;
+    }
+    return true;
+}
+
+LRESULT CALLBACK MainWindow::WndProcStatic(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
+    if (msg == WM_NCCREATE) {
+        auto* cs = reinterpret_cast<CREATESTRUCTW*>(l);
+        auto* self = reinterpret_cast<MainWindow*>(cs->lpCreateParams);
+        ::SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
+        if (self) self->hwnd_ = hwnd;
+    }
+    auto* self = reinterpret_cast<MainWindow*>(::GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+    if (self) return self->handleMessage(hwnd, msg, w, l);
+    return ::DefWindowProcW(hwnd, msg, w, l);
+}
+
+LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
+    // ImGui's wndproc hook consumes mouse/keyboard messages it needs.
+    if (filter_ && filter_(hwnd, msg, w, l)) {
+        return 1;
+    }
+    switch (msg) {
+        case WM_SIZE:
+            if (w != SIZE_MINIMIZED && onResize_) {
+                onResize_(LOWORD(l), HIWORD(l));
+            }
+            return 0;
+        case WM_SYSCOMMAND:
+            // Disable ALT-activated application menu (steals focus in-game).
+            if ((w & 0xfff0) == SC_KEYMENU) return 0;
+            break;
+        case WM_DESTROY:
+            ::PostQuitMessage(0);
+            return 0;
+    }
+    return ::DefWindowProcW(hwnd, msg, w, l);
+}
+
+}  // namespace poebot::gui
