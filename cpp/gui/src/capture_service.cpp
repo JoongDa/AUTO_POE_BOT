@@ -41,32 +41,48 @@ void CaptureService::cancel() noexcept {
     deadline_ = {};
 }
 
-bool CaptureService::tick() {
-    if (!active()) return false;
-    if (std::chrono::steady_clock::now() < deadline_) return false;
-
-    // Deadline reached — perform the capture.
+bool CaptureService::captureNow(std::string_view name) {
+    // Snapshot the cursor and write the coord right now. Any in-flight
+    // countdown is abandoned (its target may differ from `name`).
+    if (active()) {
+        name_.clear();
+        deadline_ = {};
+    }
     if (!gw_ || !gw_->valid()) {
-        spdlog::warn("capture: game window not found — '{}' not recorded", name_);
-        cancel();
+        spdlog::warn("capture: game window not found — '{}' not recorded", name);
         return false;
     }
-    if (!settings_) { cancel(); return false; }
+    if (!settings_) {
+        spdlog::error("capture: no Settings bound");
+        return false;
+    }
     auto* prof = settings_->active();
-    if (!prof) { cancel(); return false; }
-    auto* target = poebot::config::findCoordByName(*prof, name_);
-    if (!target) { cancel(); return false; }
+    if (!prof) return false;
+    auto* target = poebot::config::findCoordByName(*prof, name);
+    if (!target) {
+        spdlog::warn("capture: unknown coord name '{}'", name);
+        return false;
+    }
 
     const ScreenPoint sp = poebot::input::cursorPosition();
     const ClientPoint cp = gw_->screenToClient(sp);
     *target = cp;
 
     spdlog::info("capture: '{}' recorded screen({},{}) → client({},{})",
-                 name_, sp.x, sp.y, cp.x, cp.y);
+                 name, sp.x, sp.y, cp.x, cp.y);
+    return true;
+}
 
+bool CaptureService::tick() {
+    if (!active()) return false;
+    if (std::chrono::steady_clock::now() < deadline_) return false;
+
+    // Deadline reached — take the snapshot. Copy the name first because
+    // captureNow clears our state.
+    const std::string pending = name_;
     name_.clear();
     deadline_ = {};
-    return true;
+    return captureNow(pending);
 }
 
 float CaptureService::remainingSeconds() const noexcept {

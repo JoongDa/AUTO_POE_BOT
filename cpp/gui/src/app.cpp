@@ -189,7 +189,11 @@ void App::registerHotkeys() {
         int id = 0;
         try {
             id = hotkeyMgr_.registerHotkey(Mod::Alt | Mod::NoRepeat, b.vk,
-                                           [this, name]() { capture_.startCapture(name); });
+                                           [this, name]() {
+                                               if (capture_.captureNow(name)) {
+                                                   panelCtx_.dirty = true;
+                                               }
+                                           });
         } catch (const std::exception& e) {
             spdlog::error("registerHotkey({}) threw: {}", b.label, e.what());
             ++failed;

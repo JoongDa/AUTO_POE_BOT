@@ -26,9 +26,16 @@ public:
 
     // Begin a countdown. `name` is one of the fixed coord names ("orb1"…).
     // Returns false if another capture is already pending or the name is
-    // unknown.
+    // unknown. Used by the in-panel buttons, where the user needs time
+    // to alt-tab into the game.
     bool startCapture(std::string_view name,
                       std::chrono::milliseconds delay = std::chrono::seconds(3));
+
+    // Immediately read the cursor and write it to the named coord. Used by
+    // the per-field hotkeys (Alt+1..9/0): the user is already hovering over
+    // the target in the game, so waiting would be pointless. Cancels any
+    // in-flight countdown first. Returns true if the coord was written.
+    bool captureNow(std::string_view name);
 
     void cancel() noexcept;
 
