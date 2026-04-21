@@ -167,7 +167,7 @@ void App::registerHotkeys() {
     //   Alt+4/5/6       → invBase / invP01 / invP10
     using Mod = poebot::hotkey::Mod;
     struct Binding { UINT vk; const char* name; const char* label; };
-    const Binding bindings[] = {
+    static constexpr Binding kBindings[] = {
         {'1', "orb1",     "Alt+1"},
         {'2', "orb2",     "Alt+2"},
         {'3', "orb3",     "Alt+3"},
@@ -180,25 +180,49 @@ void App::registerHotkeys() {
     };
 
     int ok = 0;
-    for (const auto& b : bindings) {
-        std::string n = b.name;
-        int id = hotkeyMgr_.registerHotkey(Mod::Alt | Mod::NoRepeat, b.vk,
-                                           [this, n]() { capture_.startCapture(n); });
+    int failed = 0;
+    for (const auto& b : kBindings) {
+        // Capture `b.name` by pointer — it points into the static kBindings
+        // table, outlives the lambda, and keeps the lambda small so it stays
+        // inside std::function's small-object buffer (no heap allocation).
+        const char* name = b.name;
+        int id = 0;
+        try {
+            id = hotkeyMgr_.registerHotkey(Mod::Alt | Mod::NoRepeat, b.vk,
+                                           [this, name]() { capture_.startCapture(name); });
+        } catch (const std::exception& e) {
+            spdlog::error("registerHotkey({}) threw: {}", b.label, e.what());
+            ++failed;
+            continue;
+        } catch (...) {
+            spdlog::error("registerHotkey({}) threw unknown", b.label);
+            ++failed;
+            continue;
+        }
         if (id) {
             ++ok;
         } else {
-            spdlog::warn("hotkey {} failed — '{}' capture via hotkey won't work", b.label, b.name);
+            ++failed;
+            spdlog::warn("hotkey {} not available — some other app (AHK Bot.ahk?) owns it", b.label);
         }
     }
-    spdlog::info("capture hotkeys registered: {}/{}", ok, std::size(bindings));
+    spdlog::info("capture hotkeys registered: {}/{}", ok, static_cast<int>(std::size(kBindings)));
+    if (failed > 0) {
+        spdlog::warn("hotkey: {} binding(s) failed — close any running AHK bot and restart",
+                     failed);
+    }
 
-    // Task start/stop hotkeys.
-    hotkeyMgr_.registerHotkey(Mod::NoRepeat, VK_END, [this]() {
-        if (taskRunner_.state() == poebot::task::RunnerState::Running) {
-            taskRunner_.requestStop();
-            spdlog::info("End pressed — stop requested");
-        }
-    });
+    // Task stop hotkey.
+    try {
+        hotkeyMgr_.registerHotkey(Mod::NoRepeat, VK_END, [this]() {
+            if (taskRunner_.state() == poebot::task::RunnerState::Running) {
+                taskRunner_.requestStop();
+                spdlog::info("End pressed — stop requested");
+            }
+        });
+    } catch (const std::exception& e) {
+        spdlog::error("registerHotkey(End) threw: {}", e.what());
+    }
 }
 
 void App::refreshGameWindow() {
