@@ -59,8 +59,9 @@ int App::run(HINSTANCE hInstance, int nCmdShow) {
     initImGui();
     registerHotkeys();
 
-    // Wire CaptureService to game window.
+    // Wire CaptureService to game window + settings.
     capture_.setGameWindow(&gameWindow_);
+    capture_.setSettings(&settings_);
 
     panels_.push_back(std::make_unique<panels::ConfigPanel>());
     panels_.push_back(std::make_unique<panels::CraftPanel>());
@@ -82,6 +83,11 @@ int App::run(HINSTANCE hInstance, int nCmdShow) {
         }
         backend_.applyPendingResize();
         refreshGameWindow();
+
+        // Tick capture countdown; if a coord was just written, mark dirty.
+        if (capture_.tick()) {
+            panelCtx_.dirty = true;
+        }
 
         // Join finished tasks promptly so the thread is released.
         if (taskRunner_.state() == poebot::task::RunnerState::Finished) {
@@ -155,18 +161,44 @@ void App::saveSettingsIfDirty() {
 void App::registerHotkeys() {
     hotkeyMgr_.attach(window_.hwnd());
 
-    // F8 = capture coord under cursor.
+    // Per-coord capture hotkeys (mirrors the AHK original).
+    //   Alt+1/2/3       → orb1/2/3
+    //   Alt+0/8/9       → baseItem / p01Item / p10Item
+    //   Alt+4/5/6       → invBase / invP01 / invP10
     using Mod = poebot::hotkey::Mod;
-    int id = hotkeyMgr_.registerHotkey(Mod::NoRepeat, VK_F8, [this]() {
-        if (capture_.fire()) {
-            panelCtx_.dirty = true;
+    struct Binding { UINT vk; const char* name; const char* label; };
+    const Binding bindings[] = {
+        {'1', "orb1",     "Alt+1"},
+        {'2', "orb2",     "Alt+2"},
+        {'3', "orb3",     "Alt+3"},
+        {'0', "baseItem", "Alt+0"},
+        {'8', "p01Item",  "Alt+8"},
+        {'9', "p10Item",  "Alt+9"},
+        {'4', "invBase",  "Alt+4"},
+        {'5', "invP01",   "Alt+5"},
+        {'6', "invP10",   "Alt+6"},
+    };
+
+    int ok = 0;
+    for (const auto& b : bindings) {
+        std::string n = b.name;
+        int id = hotkeyMgr_.registerHotkey(Mod::Alt | Mod::NoRepeat, b.vk,
+                                           [this, n]() { capture_.startCapture(n); });
+        if (id) {
+            ++ok;
+        } else {
+            spdlog::warn("hotkey {} failed — '{}' capture via hotkey won't work", b.label, b.name);
+        }
+    }
+    spdlog::info("capture hotkeys registered: {}/{}", ok, std::size(bindings));
+
+    // Task start/stop hotkeys.
+    hotkeyMgr_.registerHotkey(Mod::NoRepeat, VK_END, [this]() {
+        if (taskRunner_.state() == poebot::task::RunnerState::Running) {
+            taskRunner_.requestStop();
+            spdlog::info("End pressed — stop requested");
         }
     });
-    if (id) {
-        spdlog::info("capture hotkey F8 registered (id={})", id);
-    } else {
-        spdlog::warn("failed to register F8 — coord capture won't work");
-    }
 }
 
 void App::refreshGameWindow() {

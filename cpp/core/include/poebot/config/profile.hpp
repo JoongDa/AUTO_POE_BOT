@@ -66,4 +66,11 @@ struct GameProfile {
 // Factory: return the default profile for a given version key ("poe1" / "poe2").
 GameProfile defaultProfileFor(std::string_view version);
 
+// Look up a ClientPoint* inside a profile's coords by name ("orb1", "baseItem"…).
+// Returns nullptr if the name is unknown. Both overloads iterate the same
+// fixed set of 9 fields so UI, capture service, and hotkey dispatch all use
+// the same spellings.
+ClientPoint*       findCoordByName(GameProfile& p, std::string_view name) noexcept;
+const ClientPoint* findCoordByName(const GameProfile& p, std::string_view name) noexcept;
+
 }  // namespace poebot::config

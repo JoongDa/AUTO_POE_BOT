@@ -31,6 +31,11 @@ struct PanelContext {
     // Phase 3.2 — task engine
     poebot::task::TaskRunner*      taskRunner = nullptr;
 
+    // Name of the currently selected side-bar panel (matches Panel::name()).
+    // main_layout writes this; individual panels read it via ctx only when
+    // they need to render something extra based on active state.
+    std::string activePanel = "Config";
+
     // Panels set `dirty = true` when they have committed an edit to settings.
     // App::run() observes this and persists to disk (throttled).
     bool dirty = false;

@@ -27,4 +27,30 @@ GameProfile defaultProfileFor(std::string_view version) {
     return p;
 }
 
+namespace {
+// Shared implementation between the const and non-const lookup. The `base`
+// parameter is always &p.coords; the offsets are stable across builds so
+// const_cast round-trips here are safe.
+ClientPoint* lookup(ProfileCoords& c, std::string_view name) noexcept {
+    if (name == "orb1")     return &c.orb1;
+    if (name == "orb2")     return &c.orb2;
+    if (name == "orb3")     return &c.orb3;
+    if (name == "baseItem") return &c.baseItem;
+    if (name == "p01Item")  return &c.p01Item;
+    if (name == "p10Item")  return &c.p10Item;
+    if (name == "invBase")  return &c.invBase;
+    if (name == "invP01")   return &c.invP01;
+    if (name == "invP10")   return &c.invP10;
+    return nullptr;
+}
+}  // namespace
+
+ClientPoint* findCoordByName(GameProfile& p, std::string_view name) noexcept {
+    return lookup(p.coords, name);
+}
+
+const ClientPoint* findCoordByName(const GameProfile& p, std::string_view name) noexcept {
+    return lookup(const_cast<ProfileCoords&>(p.coords), name);
+}
+
 }  // namespace poebot::config

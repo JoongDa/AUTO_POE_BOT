@@ -1,7 +1,8 @@
 #include <poebot/gui/panels/config_panel.hpp>
 
-#include <poebot/coords.hpp>
+#include <poebot/config/profile.hpp>
 #include <poebot/config/settings_io.hpp>
+#include <poebot/coords.hpp>
 #include <poebot/gui/capture_service.hpp>
 
 #include <imgui.h>
@@ -11,41 +12,33 @@ namespace poebot::gui::panels {
 
 namespace {
 
-// Render a single coordinate row with label, value, Capture, and Reset.
-// Returns true if the value was edited.
-bool coordRow(const char* label, poebot::ClientPoint& p, PanelContext& ctx) {
+// One coord row: field name, value, hotkey-label button, Reset button.
+// Clicking the hotkey button is equivalent to pressing the hotkey itself:
+// it starts a 3-second countdown via CaptureService.
+bool coordRow(const char* name, const char* hotkeyLabel,
+              poebot::ClientPoint& p, PanelContext& ctx) {
     bool changed = false;
-    ImGui::PushID(label);
+    ImGui::PushID(name);
     ImGui::AlignTextToFramePadding();
 
-    // Highlight the row when it's the currently armed capture target.
-    const bool armed = ctx.capture && ctx.capture->isArmedFor(&p);
+    const bool armed = ctx.capture && ctx.capture->active() &&
+                       ctx.capture->activeName() == name;
     if (armed) {
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.2f, 1.0f, 0.4f, 1.0f));
     }
 
-    ImGui::Text("%-12s", label);
-    ImGui::SameLine(140.0f);
+    ImGui::Text("%-10s", name);
+    ImGui::SameLine(110.0f);
     if (poebot::isUnset(p)) {
         ImGui::TextDisabled("(unset)");
     } else {
         ImGui::Text("(%d, %d)", p.x, p.y);
     }
-    if (armed) {
-        ImGui::SameLine();
-        ImGui::TextUnformatted("<< press F8 over the game window");
-        ImGui::PopStyleColor();
-    }
+    if (armed) ImGui::PopStyleColor();
 
-    ImGui::SameLine(armed ? 0.0f : 260.0f);
-    if (!armed) {
-        if (ImGui::SmallButton("Capture") && ctx.capture) {
-            ctx.capture->arm(&p, label);
-        }
-    } else {
-        if (ImGui::SmallButton("Cancel") && ctx.capture) {
-            ctx.capture->cancel();
-        }
+    ImGui::SameLine(250.0f);
+    if (ImGui::SmallButton(hotkeyLabel) && ctx.capture) {
+        ctx.capture->startCapture(name);
     }
     ImGui::SameLine();
     if (ImGui::SmallButton("Reset")) {
@@ -74,31 +67,34 @@ void ConfigPanel::render(PanelContext& ctx) {
     ImGui::Text("Active profile: %s  [%s]",
                 prof->displayName.c_str(), prof->name.c_str());
     ImGui::TextDisabled("Window match: \"%s\"", prof->windowTitlePattern.c_str());
+    ImGui::TextDisabled("Tip: hover the target in the game, then press the hotkey. "
+                        "You have 3 seconds to switch windows.");
     ImGui::Separator();
     ImGui::Spacing();
 
-    ImGui::TextUnformatted("Currency / orb slots");
     bool dirty = false;
     auto& c = prof->coords;
-    dirty |= coordRow("orb1",     c.orb1, ctx);
-    dirty |= coordRow("orb2",     c.orb2, ctx);
-    dirty |= coordRow("orb3",     c.orb3, ctx);
+
+    ImGui::TextUnformatted("Currency / orb slots");
+    dirty |= coordRow("orb1",     "Alt+1", c.orb1, ctx);
+    dirty |= coordRow("orb2",     "Alt+2", c.orb2, ctx);
+    dirty |= coordRow("orb3",     "Alt+3", c.orb3, ctx);
 
     ImGui::Spacing();
     ImGui::TextUnformatted("Craft / map item grid anchors");
-    dirty |= coordRow("baseItem", c.baseItem, ctx);
-    dirty |= coordRow("p01Item",  c.p01Item,  ctx);
-    dirty |= coordRow("p10Item",  c.p10Item,  ctx);
+    dirty |= coordRow("baseItem", "Alt+0", c.baseItem, ctx);
+    dirty |= coordRow("p01Item",  "Alt+8", c.p01Item,  ctx);
+    dirty |= coordRow("p10Item",  "Alt+9", c.p10Item,  ctx);
 
     ImGui::Spacing();
     ImGui::TextUnformatted("Inventory deposit anchors");
-    dirty |= coordRow("invBase",  c.invBase, ctx);
-    dirty |= coordRow("invP01",   c.invP01,  ctx);
-    dirty |= coordRow("invP10",   c.invP10,  ctx);
+    dirty |= coordRow("invBase",  "Alt+4", c.invBase, ctx);
+    dirty |= coordRow("invP01",   "Alt+5", c.invP01,  ctx);
+    dirty |= coordRow("invP10",   "Alt+6", c.invP10,  ctx);
 
     if (dirty) ctx.dirty = true;
 
-    // --- Save / Reset buttons -------------------------------------------
+    // --- Save / Reset -----------------------------------------------------
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
@@ -116,7 +112,6 @@ void ConfigPanel::render(PanelContext& ctx) {
     if (ImGui::Button("Reset profile to defaults")) {
         if (ctx.capture) ctx.capture->cancel();
         auto def = poebot::config::defaultProfileFor(prof->name);
-        // Preserve identity fields, overwrite coords + task settings + stats.
         prof->coords  = def.coords;
         prof->craft   = def.craft;
         prof->map     = def.map;
