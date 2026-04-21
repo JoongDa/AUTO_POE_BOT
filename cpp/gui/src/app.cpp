@@ -193,8 +193,46 @@ void App::initImGui() {
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     ImGui::StyleColorsDark();
 
+    loadFonts();
+
     ImGui_ImplWin32_Init(window_.hwnd());
     ImGui_ImplDX11_Init(backend_.device(), backend_.context());
+}
+
+void App::loadFonts() {
+    // Use the Windows system default stack: Segoe UI for Latin glyphs, with
+    // Microsoft YaHei merged on top for CJK coverage. Both ship with every
+    // modern Windows install and are what Explorer / Settings themselves use.
+    ImGuiIO& io = ImGui::GetIO();
+    constexpr float kSize = 18.0f;
+
+    auto exists = [](const char* p) {
+        std::error_code ec;
+        return std::filesystem::exists(p, ec);
+    };
+
+    const char* latinPath = "C:\\Windows\\Fonts\\segoeui.ttf";
+    const char* cjkPath   = "C:\\Windows\\Fonts\\msyh.ttc";
+
+    ImFontConfig base;
+    base.OversampleH = 2;
+    base.OversampleV = 1;
+
+    if (exists(latinPath)) {
+        io.Fonts->AddFontFromFileTTF(latinPath, kSize, &base);
+    } else {
+        io.Fonts->AddFontDefault();
+    }
+
+    if (exists(cjkPath)) {
+        ImFontConfig merge = base;
+        merge.MergeMode = true;
+        io.Fonts->AddFontFromFileTTF(cjkPath, kSize, &merge,
+                                     io.Fonts->GetGlyphRangesChineseSimplifiedCommon());
+        spdlog::info("font: Segoe UI + Microsoft YaHei (merged)");
+    } else {
+        spdlog::warn("font: msyh.ttc missing — Chinese will render as '?'");
+    }
 }
 
 void App::shutdownImGui() {

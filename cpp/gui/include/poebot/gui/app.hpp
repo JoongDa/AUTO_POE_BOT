@@ -25,6 +25,7 @@ public:
 private:
     void initLogging();
     void initImGui();
+    void loadFonts();
     void shutdownImGui();
 
     void loadOrDefaultSettings();
