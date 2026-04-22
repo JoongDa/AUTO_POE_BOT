@@ -97,17 +97,37 @@ Panel* resolveActiveTabPanel(const std::vector<std::unique_ptr<Panel>>& panels,
 
 void renderSidebar(const std::vector<std::unique_ptr<Panel>>& panels,
                    PanelContext& ctx) {
+    // macOS sidebar feel: rows have no fill when idle, a subtle wash on
+    // hover, and the accent blue when selected. Text is left-aligned.
+    const ImVec4 accent     = ImGui::GetStyle().Colors[ImGuiCol_ButtonActive];
+    const ImVec4 hoverWash  = ImVec4(1, 1, 1, 0.06f);
+    const ImVec4 activeWash = ImVec4(1, 1, 1, 0.10f);
+
+    ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,    ImVec2(12, 8));
+
     for (auto& p : panels) {
         if (!p || p->kind() != PanelKind::Tab) continue;
         const bool selected = (ctx.activePanel == p->name());
+
         if (selected) {
-            ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
+            ImGui::PushStyleColor(ImGuiCol_Button,        accent);
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, accent);
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive,  accent);
+        } else {
+            ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0, 0, 0, 0));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, hoverWash);
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive,  activeWash);
         }
+
         if (ImGui::Button(p->name(), ImVec2(-FLT_MIN, 34.0f))) {
             ctx.activePanel = p->name();
         }
-        if (selected) ImGui::PopStyleColor();
+
+        ImGui::PopStyleColor(3);
     }
+
+    ImGui::PopStyleVar(2);
 }
 
 }  // namespace

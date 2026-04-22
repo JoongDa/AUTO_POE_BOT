@@ -26,6 +26,7 @@ private:
     void initLogging();
     void initImGui();
     void loadFonts();
+    void applyMacStyle();
     void shutdownImGui();
 
     void loadOrDefaultSettings();
