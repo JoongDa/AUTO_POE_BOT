@@ -1,6 +1,7 @@
 #include <poebot/task/deposit_task.hpp>
 
 #include <poebot/grid/grid.hpp>
+#include <poebot/input/motion.hpp>
 #include <poebot/input/mouse.hpp>
 
 #include <spdlog/spdlog.h>
@@ -38,11 +39,8 @@ void DepositTask::run(std::atomic<bool>& stop, ProgressCallback report) {
             const ClientPoint cp = grid::invAt(c.invBase, c.invP01, c.invP10, row, col);
             const ScreenPoint sp = gw->clientToScreen(cp);
 
-            input::mouse::moveTo(sp);
-            if (!interruptibleSleep(stop, 50ms)) return;
-
-            input::mouse::shiftClick();
-            if (!interruptibleSleep(stop, 100ms)) return;
+            if (!input::mouse::humanCtrlClick(stop, sp)) return;
+            if (!input::motion::gaussSleep(stop, 80ms, 20ms, 50ms)) return;
 
             prog.ops++;
             prog.currentItem = row * d.cols + col + 1;

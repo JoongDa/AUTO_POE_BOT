@@ -1,5 +1,7 @@
 #include <poebot/gui/panels/craft_panel.hpp>
 
+#include <poebot/gui/affix_library_widget.hpp>
+#include <poebot/i18n/i18n.hpp>
 #include <poebot/task/craft_task.hpp>
 #include <poebot/task/task_runner.hpp>
 #include <poebot/win/window.hpp>
@@ -9,6 +11,7 @@
 
 #include <cfloat>
 #include <cstdio>
+#include <filesystem>
 
 namespace poebot::gui::panels {
 
@@ -17,8 +20,9 @@ constexpr size_t kAffixBufCap = 4096;
 }
 
 void CraftPanel::render(PanelContext& ctx) {
+    using poebot::i18n::tr;
     if (!ctx.settings || !ctx.settings->active()) {
-        ImGui::TextUnformatted("No active profile.");
+        ImGui::TextUnformatted(tr("common.no_active_profile"));
         return;
     }
     auto* prof = ctx.settings->active();
@@ -26,23 +30,41 @@ void CraftPanel::render(PanelContext& ctx) {
 
     bool dirty = false;
 
-    dirty |= ImGui::Checkbox("Batch mode", &c.batch);
+    dirty |= ImGui::Checkbox(tr("craft.batch_mode"), &c.batch);
 
-    if (ImGui::SliderInt("Columns", &c.cols, 1, 24)) {
-        if (ImGui::IsItemDeactivatedAfterEdit()) dirty = true;
-    }
-    if (ImGui::SliderInt("Rows", &c.rows, 1, 12)) {
-        if (ImGui::IsItemDeactivatedAfterEdit()) dirty = true;
-    }
+    // Rows/cols only make sense when batching — otherwise the task operates on
+    // a single item and the grid dimensions are moot. Disable the sliders so
+    // the UI makes that constraint obvious.
+    ImGui::BeginDisabled(!c.batch);
+    ImGui::SliderInt(tr("craft.columns"), &c.cols, 1, 24);
     if (ImGui::IsItemDeactivatedAfterEdit()) dirty = true;
+    ImGui::SliderInt(tr("craft.rows"), &c.rows, 1, 12);
+    if (ImGui::IsItemDeactivatedAfterEdit()) dirty = true;
+    ImGui::EndDisabled();
 
     char buf[kAffixBufCap];
     std::snprintf(buf, sizeof(buf), "%s", c.affixes.c_str());
-    if (ImGui::InputTextMultiline("Affixes (|-separated regex)",
+    // Use CalcItemWidth() so the text frame ends at the same x as the sliders
+    // above (which also use CalcItemWidth internally), instead of -FLT_MIN
+    // which would push the label off-screen.
+    if (ImGui::InputTextMultiline(tr("craft.affixes_label"),
                                   buf, sizeof(buf),
-                                  ImVec2(-FLT_MIN, 120))) {
+                                  ImVec2(ImGui::CalcItemWidth(), 120))) {
         c.affixes = buf;
         dirty = true;
+    }
+
+    // Library picker (dropdown + Save/New/Rename/Delete + poe.re link).
+    // Craft and Map keep separate library pools (item mods vs map mods)
+    // under sibling subfolders of the root.
+    {
+        bool libChanged = false;
+        const std::filesystem::path dir = ctx.affixLibraryDir
+            ? (*ctx.affixLibraryDir / "craft")
+            : std::filesystem::path{};
+        poebot::gui::affixLibraryWidget(dir, c.affixLibrary, c.affixes,
+                                        "craft", &libChanged);
+        if (libChanged) dirty = true;
     }
 
     ImGui::Separator();
@@ -56,16 +78,16 @@ void CraftPanel::render(PanelContext& ctx) {
 
         if (state == RunnerState::Idle) {
             // Stats from last run / persisted stats
-            ImGui::Text("Stats  ops=%d  hits=%d", prof->stats.craftOps, prof->stats.craftHits);
+            ImGui::Text(tr("craft.stats_fmt"), prof->stats.craftOps, prof->stats.craftHits);
             ImGui::SameLine();
-            if (ImGui::SmallButton("Reset stats")) {
+            if (ImGui::SmallButton(tr("craft.reset_stats"))) {
                 prof->stats.craftOps  = 0;
                 prof->stats.craftHits = 0;
                 dirty = true;
             }
             ImGui::Spacing();
 
-            if (ImGui::Button("Start craft")) {
+            if (ImGui::Button(tr("craft.start"))) {
                 if (!ctx.gameWindow || !ctx.gameWindow->valid()) {
                     spdlog::warn("craft: game window not found — launch POE first");
                 } else if (c.affixes.empty()) {
@@ -80,7 +102,7 @@ void CraftPanel::render(PanelContext& ctx) {
             }
         } else if (ours) {
             auto prog = runner->progress();
-            ImGui::Text("Crafting: item %d / %d  |  ops=%d  hits=%d",
+            ImGui::Text(tr("craft.progress_fmt"),
                         prog.currentItem, prog.totalItems, prog.ops, prog.hits);
             ImGui::ProgressBar(
                 prog.totalItems > 0
@@ -88,14 +110,14 @@ void CraftPanel::render(PanelContext& ctx) {
                     : 0.0f);
 
             if (state == RunnerState::Running) {
-                if (ImGui::Button("Stop")) runner->requestStop();
+                if (ImGui::Button(tr("common.stop"))) runner->requestStop();
             } else {
                 ImGui::BeginDisabled(true);
-                ImGui::Button("Stopping...");
+                ImGui::Button(tr("common.stopping"));
                 ImGui::EndDisabled();
             }
         } else {
-            ImGui::TextDisabled("Another task is running: %s", runner->taskName());
+            ImGui::TextDisabled(tr("common.other_task_running_fmt"), runner->taskName());
         }
     }
 

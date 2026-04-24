@@ -1,6 +1,8 @@
 #include <poebot/gui/panels/map_panel.hpp>
 
 #include <poebot/config/profile.hpp>
+#include <poebot/gui/affix_library_widget.hpp>
+#include <poebot/i18n/i18n.hpp>
 #include <poebot/task/map_task.hpp>
 #include <poebot/task/task_runner.hpp>
 #include <poebot/win/window.hpp>
@@ -10,6 +12,7 @@
 
 #include <cfloat>
 #include <cstdio>
+#include <filesystem>
 
 namespace poebot::gui::panels {
 
@@ -18,8 +21,9 @@ constexpr size_t kAffixBufCap = 4096;
 }
 
 void MapPanel::render(PanelContext& ctx) {
+    using poebot::i18n::tr;
     if (!ctx.settings || !ctx.settings->active()) {
-        ImGui::TextUnformatted("No active profile.");
+        ImGui::TextUnformatted(tr("common.no_active_profile"));
         return;
     }
     auto* prof = ctx.settings->active();
@@ -29,25 +33,43 @@ void MapPanel::render(PanelContext& ctx) {
 
     // Mode radio buttons
     int mode = static_cast<int>(m.mode);
-    if (ImGui::RadioButton("点金+重铸 (Alch+Scour)", &mode, 1)) dirty = true;
+    if (ImGui::RadioButton(tr("map.mode.alch_scour"), &mode, 1)) dirty = true;
     ImGui::SameLine();
-    if (ImGui::RadioButton("混沌石 (Chaos)", &mode, 2)) dirty = true;
+    if (ImGui::RadioButton(tr("map.mode.chaos"), &mode, 2)) dirty = true;
     m.mode = (mode == 2) ? poebot::config::MapMode::Chaos
                          : poebot::config::MapMode::AlchAndScour;
 
-    dirty |= ImGui::Checkbox("Batch mode", &m.batch);
-    ImGui::SliderInt("Columns", &m.cols, 1, 12);
+    dirty |= ImGui::Checkbox(tr("map.batch_mode"), &m.batch);
+
+    // Rows/cols only make sense when batching — single-map mode rolls one
+    // item, so the grid dimensions don't apply.
+    ImGui::BeginDisabled(!m.batch);
+    ImGui::SliderInt(tr("map.columns"), &m.cols, 1, 12);
     if (ImGui::IsItemDeactivatedAfterEdit()) dirty = true;
-    ImGui::SliderInt("Rows", &m.rows, 1, 12);
+    ImGui::SliderInt(tr("map.rows"), &m.rows, 1, 12);
     if (ImGui::IsItemDeactivatedAfterEdit()) dirty = true;
+    ImGui::EndDisabled();
 
     char buf[kAffixBufCap];
     std::snprintf(buf, sizeof(buf), "%s", m.affixes.c_str());
-    if (ImGui::InputTextMultiline("Affixes (|-separated regex)",
+    // Match slider width so frames line up; see note in craft_panel.cpp.
+    if (ImGui::InputTextMultiline(tr("map.affixes_label"),
                                   buf, sizeof(buf),
-                                  ImVec2(-FLT_MIN, 120))) {
+                                  ImVec2(ImGui::CalcItemWidth(), 120))) {
         m.affixes = buf;
         dirty = true;
+    }
+
+    // See craft_panel for context on the shared library widget. Map uses
+    // its own subfolder so its library list stays free of craft templates.
+    {
+        bool libChanged = false;
+        const std::filesystem::path dir = ctx.affixLibraryDir
+            ? (*ctx.affixLibraryDir / "map")
+            : std::filesystem::path{};
+        poebot::gui::affixLibraryWidget(dir, m.affixLibrary, m.affixes,
+                                        "map", &libChanged);
+        if (libChanged) dirty = true;
     }
 
     ImGui::Separator();
@@ -60,16 +82,16 @@ void MapPanel::render(PanelContext& ctx) {
         const bool ours  = std::string_view(runner->taskName()) == "Map";
 
         if (state == RunnerState::Idle) {
-            ImGui::Text("Stats  ops=%d  hits=%d", prof->stats.mapOps, prof->stats.mapHits);
+            ImGui::Text(tr("map.stats_fmt"), prof->stats.mapOps, prof->stats.mapHits);
             ImGui::SameLine();
-            if (ImGui::SmallButton("Reset stats")) {
+            if (ImGui::SmallButton(tr("map.reset_stats"))) {
                 prof->stats.mapOps  = 0;
                 prof->stats.mapHits = 0;
                 dirty = true;
             }
             ImGui::Spacing();
 
-            if (ImGui::Button("Start map roll")) {
+            if (ImGui::Button(tr("map.start"))) {
                 if (!ctx.gameWindow || !ctx.gameWindow->valid()) {
                     spdlog::warn("map: game window not found — launch POE first");
                 } else if (m.affixes.empty()) {
@@ -84,7 +106,7 @@ void MapPanel::render(PanelContext& ctx) {
             }
         } else if (ours) {
             auto prog = runner->progress();
-            ImGui::Text("Rolling: map %d / %d  |  ops=%d  hits=%d",
+            ImGui::Text(tr("map.progress_fmt"),
                         prog.currentItem, prog.totalItems, prog.ops, prog.hits);
             ImGui::ProgressBar(
                 prog.totalItems > 0
@@ -92,14 +114,14 @@ void MapPanel::render(PanelContext& ctx) {
                     : 0.0f);
 
             if (state == RunnerState::Running) {
-                if (ImGui::Button("Stop")) runner->requestStop();
+                if (ImGui::Button(tr("common.stop"))) runner->requestStop();
             } else {
                 ImGui::BeginDisabled(true);
-                ImGui::Button("Stopping...");
+                ImGui::Button(tr("common.stopping"));
                 ImGui::EndDisabled();
             }
         } else {
-            ImGui::TextDisabled("Another task is running: %s", runner->taskName());
+            ImGui::TextDisabled(tr("common.other_task_running_fmt"), runner->taskName());
         }
     }
 

@@ -9,6 +9,7 @@ namespace poebot::config {
 struct Settings {
     int version = 1;                      // schema version; bump on breaking changes
     std::string language = "zh";          // "zh" | "en"
+    std::string appearance = "light";     // "light" | "dark" (macOS-style theme)
     std::string activeProfile = "poe1";   // key into `profiles`
     std::unordered_map<std::string, GameProfile> profiles;
 

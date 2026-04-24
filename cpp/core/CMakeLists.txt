@@ -2,12 +2,15 @@ add_library(poebot-core STATIC
     src/config/profile.cpp
     src/config/settings.cpp
     src/config/settings_io.cpp
+    src/config/affix_library.cpp
+    src/i18n/i18n.cpp
     src/log/log_sink.cpp
     src/sys/encoding.cpp
     src/sys/clipboard.cpp
     src/win/window.cpp
     src/input/cursor.cpp
     src/input/mouse.cpp
+    src/input/motion.cpp
     src/input/keyboard.cpp
     src/hotkey/hotkey_manager.cpp
     src/item/affix_matcher.cpp

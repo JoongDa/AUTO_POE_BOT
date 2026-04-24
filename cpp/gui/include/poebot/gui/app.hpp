@@ -26,11 +26,26 @@ private:
     void initLogging();
     void initImGui();
     void loadFonts();
-    void applyMacStyle();
     void shutdownImGui();
+
+    // Theme selection: read settings_.appearance, pick Light or Dark palette,
+    // update clear-color cache, and nudge DWM to repaint the title bar.
+    // Safe to call any time after initImGui().
+    void applyAppearance();
+
+    // Apply the shared spacing/rounding/border scaffolding. Colors are left
+    // to the caller (applyMacLight / applyMacDark fill them in).
+    void applyMacBase();
+    void applyMacLight();
+    void applyMacDark();
 
     void loadOrDefaultSettings();
     void saveSettingsIfDirty();
+
+    // React to the user picking a different profile: retarget the affix
+    // library directory and auto-load the new profile's bound library. Also
+    // called once at startup to seed lastActiveProfile_.
+    void onActiveProfileChanged();
 
     void registerHotkeys();
     void refreshGameWindow();
@@ -41,7 +56,15 @@ private:
     D3D11Backend                            backend_;
     poebot::config::Settings                settings_{};
     std::shared_ptr<poebot::log::ImGuiSink> logSink_;
-    std::filesystem::path                   settingsPath_;
+    // Root of the split settings layout (<exe>/). Contains app.json and a
+    // subfolder per game profile with its own settings.json + libraries.
+    std::filesystem::path                   settingsRoot_;
+    // Active profile's affix_libraries folder. Recomputed each frame from
+    // settings_.activeProfile so switching profiles retargets the picker.
+    std::filesystem::path                   affixLibraryDir_;
+    // Tracks which profile affixLibraryDir_ was computed for; changing means
+    // we need to auto-load the new profile's libraries into its textboxes.
+    std::string                             lastActiveProfile_;
 
     std::vector<std::unique_ptr<Panel>> panels_;
     PanelContext                        panelCtx_{};
@@ -57,6 +80,10 @@ private:
     bool                                        wantExit_    = false;
     std::chrono::steady_clock::time_point       lastSaveAt_{};
     std::chrono::steady_clock::time_point       lastWindowRefresh_{};
+
+    // Cached D3D11 clear color; kept in sync with the active theme so resizes
+    // don't flash the opposite color behind the ImGui surface.
+    float clearColor_[4] = {0.96f, 0.96f, 0.97f, 1.0f};
 };
 
 }  // namespace poebot::gui

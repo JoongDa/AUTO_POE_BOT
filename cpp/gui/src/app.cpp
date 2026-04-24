@@ -7,7 +7,9 @@
 #include <poebot/gui/panels/main_layout.hpp>
 #include <poebot/gui/panels/map_panel.hpp>
 
+#include <poebot/config/affix_library.hpp>
 #include <poebot/config/settings_io.hpp>
+#include <poebot/i18n/i18n.hpp>
 #include <poebot/version.hpp>
 
 #include <imgui.h>
@@ -32,6 +34,7 @@ int App::run(HINSTANCE hInstance, int nCmdShow) {
     spdlog::info("{} v{} starting", poebot::kAppName, poebot::kAppVersion);
 
     loadOrDefaultSettings();
+    poebot::i18n::setLanguage(settings_.language);
 
     if (!window_.create(hInstance, L"POE Bot v0.1.0", 1200, 760)) {
         spdlog::error("failed to create main window");
@@ -69,12 +72,14 @@ int App::run(HINSTANCE hInstance, int nCmdShow) {
     panels_.push_back(std::make_unique<panels::DepositPanel>());
     panels_.push_back(std::make_unique<panels::LogPanel>());
 
-    panelCtx_.settings     = &settings_;
-    panelCtx_.settingsPath = &settingsPath_;
-    panelCtx_.logSink      = logSink_.get();
+    panelCtx_.settings        = &settings_;
+    panelCtx_.settingsRoot    = &settingsRoot_;
+    panelCtx_.affixLibraryDir = &affixLibraryDir_;
+    panelCtx_.logSink         = logSink_.get();
     panelCtx_.gameWindow   = &gameWindow_;
     panelCtx_.capture      = &capture_;
     panelCtx_.taskRunner   = &taskRunner_;
+    panelCtx_.onAppearanceChanged = [this]() { applyAppearance(); };
 
     while (!wantExit_) {
         if (!window_.pumpMessages()) {
@@ -89,6 +94,13 @@ int App::run(HINSTANCE hInstance, int nCmdShow) {
             panelCtx_.dirty = true;
         }
 
+        // If the user switched profile via the menu, the active profile's
+        // affix library path + auto-loaded textbox content need to update
+        // so the picker shows the new game's templates.
+        if (settings_.activeProfile != lastActiveProfile_) {
+            onActiveProfileChanged();
+        }
+
         // Join finished tasks promptly so the thread is released.
         if (taskRunner_.state() == poebot::task::RunnerState::Finished) {
             taskRunner_.join();
@@ -100,7 +112,7 @@ int App::run(HINSTANCE hInstance, int nCmdShow) {
 
     // Force-save on exit so any last edits aren't lost to the debounce window.
     if (panelCtx_.dirty) {
-        poebot::config::saveSettings(settings_, settingsPath_);
+        poebot::config::saveLayout(settings_, settingsRoot_);
         panelCtx_.dirty = false;
     }
 
@@ -124,6 +136,11 @@ void App::initLogging() {
         logSink_ = std::make_shared<poebot::log::ImGuiSink>(1000);
         logSink_->set_level(spdlog::level::trace);
 
+        // Publish the GUI sink as the "active" one so task code can push
+        // structured entries (highlighted hit text) via poebot::log::push
+        // without threading a sink pointer through every call site.
+        poebot::log::setActiveSink(logSink_.get());
+
         std::vector<spdlog::sink_ptr> sinks{msvc_sink, file_sink, logSink_};
         auto logger = std::make_shared<spdlog::logger>("poe-bot", sinks.begin(), sinks.end());
         logger->set_level(spdlog::level::info);
@@ -135,15 +152,54 @@ void App::initLogging() {
 }
 
 void App::loadOrDefaultSettings() {
-    settingsPath_ = std::filesystem::current_path() / "settings.json";
-    settings_     = poebot::config::loadSettings(settingsPath_);
+    settingsRoot_ = std::filesystem::current_path();
 
-    if (!std::filesystem::exists(settingsPath_)) {
-        poebot::config::saveSettings(settings_, settingsPath_);
+    // loadLayout handles the one-shot migration from the legacy flat layout
+    // (exe/settings.json + exe/affix_libraries/) into per-profile dirs, then
+    // reads the new layout. If nothing exists we get defaults.
+    settings_ = poebot::config::loadLayout(settingsRoot_);
+
+    // Ensure the layout has at least one on-disk snapshot so next launch
+    // can round-trip via app.json. Cheap if everything already exists.
+    poebot::config::saveLayout(settings_, settingsRoot_);
+
+    // Set up directory state for the currently active profile. After this
+    // runs, lastActiveProfile_ matches settings_.activeProfile, so the main
+    // loop only reacts when the user actually picks a different profile.
+    onActiveProfileChanged();
+
+    spdlog::info("settings: root={}, active={}, profiles={}",
+                 settingsRoot_.string(), settings_.activeProfile,
+                 settings_.profiles.size());
+}
+
+void App::onActiveProfileChanged() {
+    const std::string& name = settings_.activeProfile;
+    affixLibraryDir_ = poebot::config::affixLibraryDirFor(settingsRoot_, name);
+
+    // Each profile keeps its own craft/ and map/ library folders — make
+    // sure they exist so the picker doesn't start disabled on first run.
+    poebot::config::ensureAffixLibraryDir(affixLibraryDir_ / "craft");
+    poebot::config::ensureAffixLibraryDir(affixLibraryDir_ / "map");
+
+    // Auto-load the active profile's bound library into its textboxes. If
+    // the library was renamed/deleted outside the app, leave whatever's
+    // currently in the profile — the dropdown will show "(none)" until
+    // the user picks again.
+    if (auto* prof = settings_.active()) {
+        if (!prof->craft.affixLibrary.empty()) {
+            auto s = poebot::config::loadAffixLibrary(
+                affixLibraryDir_ / "craft", prof->craft.affixLibrary);
+            if (!s.empty()) prof->craft.affixes = std::move(s);
+        }
+        if (!prof->map.affixLibrary.empty()) {
+            auto s = poebot::config::loadAffixLibrary(
+                affixLibraryDir_ / "map", prof->map.affixLibrary);
+            if (!s.empty()) prof->map.affixes = std::move(s);
+        }
     }
 
-    spdlog::info("settings: path={}, active={}, profiles={}",
-                 settingsPath_.string(), settings_.activeProfile, settings_.profiles.size());
+    lastActiveProfile_ = name;
 }
 
 void App::saveSettingsIfDirty() {
@@ -151,7 +207,7 @@ void App::saveSettingsIfDirty() {
     auto now = std::chrono::steady_clock::now();
     if (now - lastSaveAt_ < kSaveDebounce) return;
 
-    if (poebot::config::saveSettings(settings_, settingsPath_)) {
+    if (poebot::config::saveLayout(settings_, settingsRoot_)) {
         spdlog::debug("settings saved");
     }
     panelCtx_.dirty = false;
@@ -252,18 +308,47 @@ void App::initImGui() {
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
-    applyMacStyle();
+    applyAppearance();
     loadFonts();
 
     ImGui_ImplWin32_Init(window_.hwnd());
     ImGui_ImplDX11_Init(backend_.device(), backend_.context());
 }
 
-// macOS Dark Mode-inspired palette + roundings. True vibrancy/blur isn't
-// reachable in a raw D3D11 swap-chain, so we approximate with soft grays,
-// generous rounding, and the system blue (#0A84FF) as the one accent color.
-void App::applyMacStyle() {
-    ImGui::StyleColorsDark();  // start from a sane dark baseline
+// ---------------------------------------------------------------------------
+// macOS-inspired themes. True vibrancy/blur isn't reachable in a raw D3D11
+// swap chain, so we approximate with soft grays, generous rounding, and a
+// single accent blue. Spacing / rounding / borders are identical across
+// Light and Dark; only the palette changes.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+ImVec4 rgba(int r, int g, int b, float a = 1.0f) {
+    return ImVec4(r / 255.0f, g / 255.0f, b / 255.0f, a);
+}
+
+}  // namespace
+
+void App::applyAppearance() {
+    const bool dark = (settings_.appearance == "dark");
+
+    applyMacBase();
+    if (dark) applyMacDark();
+    else      applyMacLight();
+
+    // Keep the swap-chain clear color matched to WindowBg so resize flashes
+    // don't show the opposite theme for a frame.
+    const ImVec4& bg = ImGui::GetStyle().Colors[ImGuiCol_WindowBg];
+    clearColor_[0] = bg.x;
+    clearColor_[1] = bg.y;
+    clearColor_[2] = bg.z;
+    clearColor_[3] = 1.0f;
+
+    window_.setDarkTitleBar(dark);
+}
+
+void App::applyMacBase() {
     ImGuiStyle& s = ImGui::GetStyle();
 
     // --- Spacing ------------------------------------------------------------
@@ -291,61 +376,60 @@ void App::applyMacStyle() {
     s.PopupBorderSize  = 0.0f;
     s.FrameBorderSize  = 0.0f;
     s.TabBorderSize    = 0.0f;
+}
 
-    // --- Colors -------------------------------------------------------------
-    auto rgba = [](int r, int g, int b, float a = 1.0f) {
-        return ImVec4(r / 255.0f, g / 255.0f, b / 255.0f, a);
-    };
-    // System accent (macOS Dark Mode blue)
+void App::applyMacDark() {
+    ImGui::StyleColorsDark();  // safe baseline
+    ImVec4* c = ImGui::GetStyle().Colors;
+
+    // macOS Dark Mode system accent
     const ImVec4 accent  = rgba(10, 132, 255);
     const ImVec4 accentD = rgba(10, 132, 255, 0.78f);
     const ImVec4 accentF = rgba(64, 156, 255);
 
-    ImVec4* c = s.Colors;
-
     // Surfaces
-    c[ImGuiCol_WindowBg]        = rgba(30, 30, 32);
-    c[ImGuiCol_ChildBg]         = rgba(36, 36, 38);
-    c[ImGuiCol_PopupBg]         = rgba(44, 44, 46, 0.98f);
-    c[ImGuiCol_MenuBarBg]       = rgba(28, 28, 30);
+    c[ImGuiCol_WindowBg]  = rgba(30, 30, 32);
+    c[ImGuiCol_ChildBg]   = rgba(36, 36, 38);
+    c[ImGuiCol_PopupBg]   = rgba(44, 44, 46, 0.98f);
+    c[ImGuiCol_MenuBarBg] = rgba(28, 28, 30);
 
     // Text
-    c[ImGuiCol_Text]            = rgba(235, 235, 235);
-    c[ImGuiCol_TextDisabled]    = rgba(142, 142, 147);
-    c[ImGuiCol_TextSelectedBg]  = rgba(10, 132, 255, 0.32f);
+    c[ImGuiCol_Text]           = rgba(235, 235, 235);
+    c[ImGuiCol_TextDisabled]   = rgba(142, 142, 147);
+    c[ImGuiCol_TextSelectedBg] = rgba(10, 132, 255, 0.32f);
 
     // Borders / separators
-    c[ImGuiCol_Border]          = rgba(56, 56, 58, 0.6f);
-    c[ImGuiCol_BorderShadow]    = ImVec4(0, 0, 0, 0);
-    c[ImGuiCol_Separator]       = rgba(56, 56, 58, 0.8f);
-    c[ImGuiCol_SeparatorHovered]= rgba(110, 110, 115);
-    c[ImGuiCol_SeparatorActive] = rgba(140, 140, 145);
+    c[ImGuiCol_Border]           = rgba(56, 56, 58, 0.6f);
+    c[ImGuiCol_BorderShadow]     = ImVec4(0, 0, 0, 0);
+    c[ImGuiCol_Separator]        = rgba(56, 56, 58, 0.8f);
+    c[ImGuiCol_SeparatorHovered] = rgba(110, 110, 115);
+    c[ImGuiCol_SeparatorActive]  = rgba(140, 140, 145);
 
     // Input frames
-    c[ImGuiCol_FrameBg]         = rgba(58, 58, 60);
-    c[ImGuiCol_FrameBgHovered]  = rgba(72, 72, 75);
-    c[ImGuiCol_FrameBgActive]   = rgba(88, 88, 92);
+    c[ImGuiCol_FrameBg]        = rgba(58, 58, 60);
+    c[ImGuiCol_FrameBgHovered] = rgba(72, 72, 75);
+    c[ImGuiCol_FrameBgActive]  = rgba(88, 88, 92);
 
-    // Buttons — the default filled gray; the sidebar overrides these.
-    c[ImGuiCol_Button]          = rgba(58, 58, 60);
-    c[ImGuiCol_ButtonHovered]   = rgba(72, 72, 75);
-    c[ImGuiCol_ButtonActive]    = accent;
+    // Buttons
+    c[ImGuiCol_Button]        = rgba(58, 58, 60);
+    c[ImGuiCol_ButtonHovered] = rgba(72, 72, 75);
+    c[ImGuiCol_ButtonActive]  = accent;
 
     // Headers / selectables
-    c[ImGuiCol_Header]          = accentD;
-    c[ImGuiCol_HeaderHovered]   = accentF;
-    c[ImGuiCol_HeaderActive]    = accent;
+    c[ImGuiCol_Header]        = accentD;
+    c[ImGuiCol_HeaderHovered] = accentF;
+    c[ImGuiCol_HeaderActive]  = accent;
 
     // Checkboxes / sliders
-    c[ImGuiCol_CheckMark]       = accent;
-    c[ImGuiCol_SliderGrab]      = accent;
-    c[ImGuiCol_SliderGrabActive]= accentF;
+    c[ImGuiCol_CheckMark]        = accent;
+    c[ImGuiCol_SliderGrab]       = accent;
+    c[ImGuiCol_SliderGrabActive] = accentF;
 
     // Scrollbar (macOS: thin, translucent, no track)
-    c[ImGuiCol_ScrollbarBg]         = ImVec4(0, 0, 0, 0);
-    c[ImGuiCol_ScrollbarGrab]       = rgba(110, 110, 115, 0.50f);
-    c[ImGuiCol_ScrollbarGrabHovered]= rgba(140, 140, 145, 0.75f);
-    c[ImGuiCol_ScrollbarGrabActive] = rgba(170, 170, 175, 0.90f);
+    c[ImGuiCol_ScrollbarBg]          = ImVec4(0, 0, 0, 0);
+    c[ImGuiCol_ScrollbarGrab]        = rgba(110, 110, 115, 0.50f);
+    c[ImGuiCol_ScrollbarGrabHovered] = rgba(140, 140, 145, 0.75f);
+    c[ImGuiCol_ScrollbarGrabActive]  = rgba(170, 170, 175, 0.90f);
 
     // Tabs (docking)
     c[ImGuiCol_Tab]                = rgba(44, 44, 46);
@@ -354,7 +438,7 @@ void App::applyMacStyle() {
     c[ImGuiCol_TabUnfocused]       = rgba(36, 36, 38);
     c[ImGuiCol_TabUnfocusedActive] = rgba(58, 58, 60);
 
-    // Title bar (rarely visible — we use a single host window)
+    // Title bar (rarely visible — host window has no ImGui title)
     c[ImGuiCol_TitleBg]          = rgba(28, 28, 30);
     c[ImGuiCol_TitleBgActive]    = rgba(28, 28, 30);
     c[ImGuiCol_TitleBgCollapsed] = rgba(28, 28, 30, 0.6f);
@@ -363,6 +447,81 @@ void App::applyMacStyle() {
     c[ImGuiCol_ResizeGrip]        = rgba(120, 120, 125, 0.25f);
     c[ImGuiCol_ResizeGripHovered] = rgba(10, 132, 255, 0.55f);
     c[ImGuiCol_ResizeGripActive]  = rgba(10, 132, 255, 0.85f);
+
+    // Nav / drag-drop
+    c[ImGuiCol_NavHighlight]   = accent;
+    c[ImGuiCol_DragDropTarget] = accent;
+}
+
+void App::applyMacLight() {
+    ImGui::StyleColorsLight();  // baseline
+    ImVec4* c = ImGui::GetStyle().Colors;
+
+    // macOS Light Mode system accent (slightly deeper blue than Dark's)
+    const ImVec4 accent  = rgba(0, 122, 255);
+    const ImVec4 accentD = rgba(0, 122, 255, 0.82f);
+    const ImVec4 accentF = rgba(51, 149, 255);
+
+    // Surfaces: Aqua uses a cool white canvas with white panels on top.
+    c[ImGuiCol_WindowBg]  = rgba(245, 245, 247);
+    c[ImGuiCol_ChildBg]   = rgba(255, 255, 255);
+    c[ImGuiCol_PopupBg]   = rgba(250, 250, 252, 0.98f);
+    c[ImGuiCol_MenuBarBg] = rgba(236, 236, 238);
+
+    // Text (macOS never uses pure black; ~85% on white reads as "dark gray")
+    c[ImGuiCol_Text]           = rgba(28, 28, 30);
+    c[ImGuiCol_TextDisabled]   = rgba(142, 142, 147);
+    c[ImGuiCol_TextSelectedBg] = rgba(0, 122, 255, 0.28f);
+
+    // Borders / separators
+    c[ImGuiCol_Border]           = rgba(210, 210, 215, 0.60f);
+    c[ImGuiCol_BorderShadow]     = ImVec4(0, 0, 0, 0);
+    c[ImGuiCol_Separator]        = rgba(210, 210, 215, 0.90f);
+    c[ImGuiCol_SeparatorHovered] = rgba(160, 160, 165);
+    c[ImGuiCol_SeparatorActive]  = rgba(120, 120, 125);
+
+    // Input frames (slightly darker than ChildBg so they read as wells)
+    c[ImGuiCol_FrameBg]        = rgba(232, 232, 237);
+    c[ImGuiCol_FrameBgHovered] = rgba(220, 220, 225);
+    c[ImGuiCol_FrameBgActive]  = rgba(208, 208, 213);
+
+    // Buttons
+    c[ImGuiCol_Button]        = rgba(232, 232, 237);
+    c[ImGuiCol_ButtonHovered] = rgba(220, 220, 225);
+    c[ImGuiCol_ButtonActive]  = accent;
+
+    // Headers / selectables
+    c[ImGuiCol_Header]        = accentD;
+    c[ImGuiCol_HeaderHovered] = accentF;
+    c[ImGuiCol_HeaderActive]  = accent;
+
+    // Checkboxes / sliders
+    c[ImGuiCol_CheckMark]        = accent;
+    c[ImGuiCol_SliderGrab]       = accent;
+    c[ImGuiCol_SliderGrabActive] = accentF;
+
+    // Scrollbar: dark thumb on light background, translucent
+    c[ImGuiCol_ScrollbarBg]          = ImVec4(0, 0, 0, 0);
+    c[ImGuiCol_ScrollbarGrab]        = rgba(0, 0, 0, 0.28f);
+    c[ImGuiCol_ScrollbarGrabHovered] = rgba(0, 0, 0, 0.45f);
+    c[ImGuiCol_ScrollbarGrabActive]  = rgba(0, 0, 0, 0.60f);
+
+    // Tabs (docking)
+    c[ImGuiCol_Tab]                = rgba(232, 232, 237);
+    c[ImGuiCol_TabHovered]         = rgba(220, 220, 225);
+    c[ImGuiCol_TabActive]          = accent;
+    c[ImGuiCol_TabUnfocused]       = rgba(240, 240, 242);
+    c[ImGuiCol_TabUnfocusedActive] = rgba(220, 220, 225);
+
+    // Title bar
+    c[ImGuiCol_TitleBg]          = rgba(246, 246, 248);
+    c[ImGuiCol_TitleBgActive]    = rgba(246, 246, 248);
+    c[ImGuiCol_TitleBgCollapsed] = rgba(246, 246, 248, 0.70f);
+
+    // Resize grip
+    c[ImGuiCol_ResizeGrip]        = rgba(0, 0, 0, 0.15f);
+    c[ImGuiCol_ResizeGripHovered] = rgba(0, 122, 255, 0.55f);
+    c[ImGuiCol_ResizeGripActive]  = rgba(0, 122, 255, 0.85f);
 
     // Nav / drag-drop
     c[ImGuiCol_NavHighlight]   = accent;
@@ -419,9 +578,7 @@ void App::renderFrame() {
     panels::renderMainLayout(panels_, panelCtx_, wantExit_);
 
     ImGui::Render();
-    // Matches applyMacStyle's WindowBg (30,30,32) so resizes don't flash.
-    const float clear[4] = {30.0f / 255, 30.0f / 255, 32.0f / 255, 1.0f};
-    backend_.beginFrame(clear);
+    backend_.beginFrame(clearColor_);
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
     backend_.endFrame();
 }

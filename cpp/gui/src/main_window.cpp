@@ -1,6 +1,17 @@
 #include <poebot/gui/main_window.hpp>
+#include <poebot/gui/resource.h>
 
+#include <dwmapi.h>
 #include <spdlog/spdlog.h>
+
+// DWMWA_USE_IMMERSIVE_DARK_MODE was renumbered between Win10 1809 (19)
+// and Win10 2004+ (20). Trying both is the robust thing to do.
+#ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
+#define DWMWA_USE_IMMERSIVE_DARK_MODE 20
+#endif
+#ifndef DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1
+#define DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1 19
+#endif
 
 namespace poebot::gui {
 
@@ -18,12 +29,19 @@ MainWindow::~MainWindow() {
 bool MainWindow::create(HINSTANCE hInstance, const wchar_t* title, int width, int height) {
     hInstance_ = hInstance;
 
+    // Icon resource is embedded via gui/res/app.rc. LoadIconW returns null
+    // silently when the .rc / .ico hasn't been built yet; we fall back to
+    // the default in that case rather than aborting.
+    HICON appIcon = ::LoadIconW(hInstance, MAKEINTRESOURCEW(IDI_APP_ICON));
+
     WNDCLASSEXW wc{};
     wc.cbSize        = sizeof(wc);
     wc.style         = CS_CLASSDC;
     wc.lpfnWndProc   = &MainWindow::WndProcStatic;
     wc.hInstance     = hInstance;
     wc.lpszClassName = className_;
+    wc.hIcon         = appIcon;
+    wc.hIconSm       = appIcon;
     if (!::RegisterClassExW(&wc)) {
         spdlog::error("RegisterClassExW failed: {}", ::GetLastError());
         return false;
@@ -37,7 +55,18 @@ bool MainWindow::create(HINSTANCE hInstance, const wchar_t* title, int width, in
         spdlog::error("CreateWindowExW failed: {}", ::GetLastError());
         return false;
     }
+
     return true;
+}
+
+void MainWindow::setDarkTitleBar(bool dark) {
+    if (!hwnd_) return;
+    BOOL v = dark ? TRUE : FALSE;
+    if (FAILED(::DwmSetWindowAttribute(hwnd_, DWMWA_USE_IMMERSIVE_DARK_MODE,
+                                       &v, sizeof(v)))) {
+        ::DwmSetWindowAttribute(hwnd_, DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1,
+                                &v, sizeof(v));
+    }
 }
 
 void MainWindow::show(int nCmdShow) {

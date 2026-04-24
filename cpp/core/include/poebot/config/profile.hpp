@@ -24,6 +24,10 @@ struct CraftSettings {
     int cols = 10;
     int rows = 2;
     std::string affixes;  // regex alternatives, '|' separated
+    // Name of the last-selected affix library (without path or .txt extension).
+    // Empty string means "no library bound — textbox is ad-hoc". Loaded on
+    // startup if set and still present on disk.
+    std::string affixLibrary;
 };
 
 enum class MapMode {
@@ -37,6 +41,7 @@ struct MapSettings {
     int cols = 4;
     int rows = 3;
     std::string affixes;
+    std::string affixLibrary;  // see CraftSettings::affixLibrary
 };
 
 struct DepositSettings {

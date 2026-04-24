@@ -27,6 +27,10 @@ public:
     // Drain pending messages. Returns false once WM_QUIT has been seen.
     bool pumpMessages();
 
+    // Ask DWM to paint the title bar dark (true) or light (false). The effect
+    // is immediate on Win11 / Win10 2004+; older builds silently ignore.
+    void setDarkTitleBar(bool dark);
+
     HWND hwnd() const noexcept { return hwnd_; }
 
     void setMessageFilter(MessageFilter f) { filter_   = std::move(f); }

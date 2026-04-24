@@ -1,0 +1,5 @@
+#include "poebot/gui/resource.h"
+
+// Main application icon (embedded into the exe). The .ico is generated
+// from gui/assets/app.png by scripts/make_icon.py.
+IDI_APP_ICON ICON "app.ico"

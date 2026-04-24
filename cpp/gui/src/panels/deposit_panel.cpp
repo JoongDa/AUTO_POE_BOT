@@ -1,5 +1,6 @@
 #include <poebot/gui/panels/deposit_panel.hpp>
 
+#include <poebot/i18n/i18n.hpp>
 #include <poebot/task/deposit_task.hpp>
 #include <poebot/task/task_runner.hpp>
 #include <poebot/win/window.hpp>
@@ -10,23 +11,21 @@
 namespace poebot::gui::panels {
 
 void DepositPanel::render(PanelContext& ctx) {
+    using poebot::i18n::tr;
     if (!ctx.settings || !ctx.settings->active()) {
-        ImGui::TextUnformatted("No active profile.");
+        ImGui::TextUnformatted(tr("common.no_active_profile"));
         return;
     }
     auto& d = ctx.settings->active()->deposit;
 
     bool dirty = false;
-    ImGui::SliderInt("Inventory columns", &d.cols, 1, 24);
+    ImGui::SliderInt(tr("deposit.inv_columns"), &d.cols, 1, 24);
     if (ImGui::IsItemDeactivatedAfterEdit()) dirty = true;
-    ImGui::SliderInt("Inventory rows", &d.rows, 1, 12);
+    ImGui::SliderInt(tr("deposit.inv_rows"), &d.rows, 1, 12);
     if (ImGui::IsItemDeactivatedAfterEdit()) dirty = true;
 
     ImGui::Separator();
-    ImGui::TextWrapped(
-        "Scans the inventory grid (%d x %d) and shift-clicks each occupied cell "
-        "into the open stash tab.",
-        d.cols, d.rows);
+    ImGui::TextWrapped(tr("deposit.description_fmt"), d.cols, d.rows);
 
     ImGui::Spacing();
 
@@ -37,7 +36,7 @@ void DepositPanel::render(PanelContext& ctx) {
         const auto state = runner->state();
 
         if (state == RunnerState::Idle) {
-            if (ImGui::Button("Deposit now")) {
+            if (ImGui::Button(tr("deposit.start"))) {
                 auto* prof = ctx.settings->active();
                 if (!prof) {
                     spdlog::warn("deposit: no active profile");
@@ -53,22 +52,22 @@ void DepositPanel::render(PanelContext& ctx) {
             }
         } else if (state == RunnerState::Running || state == RunnerState::Stopping) {
             auto prog = runner->progress();
-            ImGui::Text("Depositing: %d / %d cells", prog.currentItem, prog.totalItems);
+            ImGui::Text(tr("deposit.progress_fmt"), prog.currentItem, prog.totalItems);
             ImGui::ProgressBar(
                 prog.totalItems > 0
                     ? static_cast<float>(prog.currentItem) / static_cast<float>(prog.totalItems)
                     : 0.0f);
 
             if (state == RunnerState::Running) {
-                if (ImGui::Button("Stop")) runner->requestStop();
+                if (ImGui::Button(tr("common.stop"))) runner->requestStop();
             } else {
                 ImGui::BeginDisabled(true);
-                ImGui::Button("Stopping...");
+                ImGui::Button(tr("common.stopping"));
                 ImGui::EndDisabled();
             }
         } else {
             // Finished — App loop will auto-join.
-            ImGui::TextUnformatted("Deposit finished.");
+            ImGui::TextUnformatted(tr("deposit.finished"));
         }
     }
 

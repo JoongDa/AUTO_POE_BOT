@@ -2,9 +2,27 @@
 
 #include <spdlog/pattern_formatter.h>
 
+#include <atomic>
 #include <utility>
 
 namespace poebot::log {
+
+namespace {
+// Active sink pointer for the free-function push(). Owned by App; tasks on
+// worker threads read it. atomic so cross-thread publishes are safe without
+// a mutex; the sink itself takes its own lock in push().
+std::atomic<ImGuiSink*> g_activeSink{nullptr};
+}  // namespace
+
+void setActiveSink(ImGuiSink* sink) {
+    g_activeSink.store(sink, std::memory_order_release);
+}
+
+void push(LogEntry e) {
+    if (auto* s = g_activeSink.load(std::memory_order_acquire)) {
+        s->push(std::move(e));
+    }
+}
 
 ImGuiSink::ImGuiSink(std::size_t capacity)
     : capacity_(capacity == 0 ? 1 : capacity) {}
@@ -44,6 +62,14 @@ void ImGuiSink::clear() {
 std::size_t ImGuiSink::size() const {
     std::lock_guard<std::mutex> lock(mu_);
     return buffer_.size();
+}
+
+void ImGuiSink::push(LogEntry e) {
+    std::lock_guard<std::mutex> lock(mu_);
+    buffer_.push_back(std::move(e));
+    while (buffer_.size() > capacity_) {
+        buffer_.pop_front();
+    }
 }
 
 }  // namespace poebot::log
