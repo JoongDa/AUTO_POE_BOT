@@ -12,6 +12,7 @@ add_library(poebot-core STATIC
     src/input/mouse.cpp
     src/input/motion.cpp
     src/input/keyboard.cpp
+    src/hotkey/binding.cpp
     src/hotkey/hotkey_manager.cpp
     src/item/affix_matcher.cpp
     src/task/task_runner.cpp

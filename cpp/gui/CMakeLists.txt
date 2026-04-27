@@ -5,6 +5,7 @@ add_executable(poe-bot WIN32
     src/main_window.cpp
     src/capture_service.cpp
     src/affix_library_widget.cpp
+    src/hotkey_capture.cpp
     src/panels/main_layout.cpp
     src/panels/config_panel.cpp
     src/panels/craft_panel.cpp

@@ -1,5 +1,7 @@
 #include <poebot/config/settings_io.hpp>
 
+#include <poebot/hotkey/binding.hpp>
+
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
@@ -279,15 +281,40 @@ bool atomicWriteJson(const std::filesystem::path& path, const json& j) {
     }
 }
 
-// Top-level meta file: activeProfile + language + appearance (everything that
-// isn't per-game). Keeps the swap-active-profile action snappy (one small
-// file rewrite) even if each profile's settings.json grows.
+// Top-level meta file: activeProfile + language + appearance + global hotkey
+// bindings (everything that isn't per-game). Keeps the swap-active-profile
+// action snappy (one small file rewrite) even if each profile's settings.json
+// grows.
 struct AppMeta {
     int version = 1;
     std::string language = "zh";
     std::string appearance = "light";
     std::string activeProfile = "poe1";
+    poebot::hotkey::HotkeyConfig hotkeys = poebot::hotkey::defaultHotkeys();
 };
+
+// Hotkeys serialize as a string-keyed object of human-readable bindings:
+//   "hotkeys": { "task.stop": "End", "capture.orb1": "Alt+1", ... }
+// Unknown keys (e.g. an action removed in a future version) are kept
+// verbatim on round-trip but ignored at use time. Missing keys are filled
+// from defaults during from_json so older files keep working without an
+// explicit migration step.
+json hotkeysToJson(const poebot::hotkey::HotkeyConfig& h) {
+    json j = json::object();
+    for (const auto& [id, b] : h) j[id] = b.format();
+    return j;
+}
+poebot::hotkey::HotkeyConfig hotkeysFromJson(const json& j) {
+    auto cfg = poebot::hotkey::defaultHotkeys();
+    if (!j.is_object()) return cfg;
+    for (auto it = j.begin(); it != j.end(); ++it) {
+        if (!it.value().is_string()) continue;
+        auto parsed = poebot::hotkey::HotkeyBinding::parse(it.value().get<std::string>());
+        if (parsed.valid()) cfg[it.key()] = parsed;
+        // Unparseable entries fall through to whatever was in defaults.
+    }
+    return cfg;
+}
 
 void to_json(json& j, const AppMeta& m) {
     j = json{
@@ -295,6 +322,7 @@ void to_json(json& j, const AppMeta& m) {
         {"language", m.language},
         {"appearance", m.appearance},
         {"activeProfile", m.activeProfile},
+        {"hotkeys", hotkeysToJson(m.hotkeys)},
     };
 }
 void from_json(const json& j, AppMeta& m) {
@@ -302,6 +330,11 @@ void from_json(const json& j, AppMeta& m) {
     m.language      = j.value("language", std::string{"zh"});
     m.appearance    = j.value("appearance", std::string{"light"});
     m.activeProfile = j.value("activeProfile", std::string{"poe1"});
+    if (j.contains("hotkeys")) {
+        m.hotkeys = hotkeysFromJson(j["hotkeys"]);
+    } else {
+        m.hotkeys = poebot::hotkey::defaultHotkeys();
+    }
 }
 
 bool readAppMeta(const std::filesystem::path& path, AppMeta& out) {
@@ -370,6 +403,8 @@ void migrateLegacyIfNeeded(const std::filesystem::path& root) {
     meta.language      = legacyS.language;
     meta.appearance    = legacyS.appearance;
     meta.activeProfile = legacyS.activeProfile;
+    // Legacy settings predate user-customizable hotkeys, so seed defaults.
+    meta.hotkeys       = poebot::hotkey::defaultHotkeys();
     atomicWriteJson(appJson, meta);
 
     // Write each profile to its own dir.
@@ -410,6 +445,7 @@ Settings loadLayout(const std::filesystem::path& root) {
         s.language      = meta.language;
         s.appearance    = meta.appearance;
         s.activeProfile = meta.activeProfile;
+        s.hotkeys       = std::move(meta.hotkeys);
     } else {
         spdlog::info("settings: no app.json at {}, using defaults", root.string());
     }
@@ -445,6 +481,7 @@ bool saveLayout(const Settings& s, const std::filesystem::path& root) {
     meta.language      = s.language;
     meta.appearance    = s.appearance;
     meta.activeProfile = s.activeProfile;
+    meta.hotkeys       = s.hotkeys;
 
     bool ok = atomicWriteJson(root / "app.json", meta);
     for (const auto& [name, prof] : s.profiles) {

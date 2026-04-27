@@ -1,9 +1,11 @@
 #pragma once
 #include <poebot/config/settings.hpp>
+#include <poebot/hotkey/binding.hpp>
 #include <poebot/log/log_sink.hpp>
 
 #include <filesystem>
 #include <functional>
+#include <string>
 
 namespace poebot::win  { class GameWindow; }
 namespace poebot::task { class TaskRunner; }
@@ -52,6 +54,18 @@ struct PanelContext {
     // the menu. App wires this to its applyAppearance() so palette, clear
     // color, and title bar repaint immediately.
     std::function<void()> onAppearanceChanged;
+
+    // Live view of the hotkey map (App owns the storage). Settings panel
+    // reads this every frame to render the current binding next to each
+    // row. Pointer is non-null once App has finished wiring panelCtx_.
+    const poebot::hotkey::HotkeyConfig* hotkeys = nullptr;
+
+    // Bridge to App::rebindHotkey. Returns true on success, false on any
+    // conflict / system-wide registration failure. The caller renders an
+    // inline error in the rebind modal when this returns false; settings
+    // are unchanged in that case.
+    std::function<bool(const std::string& id,
+                       poebot::hotkey::HotkeyBinding newBinding)> onRebindHotkey;
 };
 
 // Abstract base for every UI panel. Keep render() cheap; it runs every frame.

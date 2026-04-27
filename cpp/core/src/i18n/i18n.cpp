@@ -25,8 +25,11 @@ const Table& enTable() {
         {"menu.app.appearance.light",      "Light"},
         {"menu.app.appearance.dark",       "Dark"},
 
-        // Sidebar tabs
-        {"panel.config",                   "Config"},
+        // Sidebar tabs. The internal id of the first tab is still "Config"
+        // (Panel::name()), but the user-facing label is "Settings" — same
+        // wording as PoE Overlay's settings page, where this panel grew its
+        // hotkey-customization section.
+        {"panel.config",                   "Settings"},
         {"panel.craft",                    "Craft"},
         {"panel.map",                      "Map"},
         {"panel.deposit",                  "Deposit"},
@@ -56,8 +59,9 @@ const Table& enTable() {
         {"affix_lib.lines_fmt",            "%d rules"},
         {"affix_lib.poere_prefix",         "Supports"},
 
-        // Config panel — Save is gone (auto-save handles it); Reset stays
-        // but now goes through a confirm modal.
+        // Settings panel — Save is gone (auto-save handles it); Reset stays
+        // but now goes through a confirm modal. The hotkey rows live above
+        // the coord rows.
         {"config.no_settings",             "No settings loaded."},
         {"config.no_active_profile_fmt",   "No active profile ('%s' not found)."},
         {"config.active_profile_fmt",      "Active profile: %s  [%s]"},
@@ -67,6 +71,33 @@ const Table& enTable() {
         {"config.unset",                   "(unset)"},
         {"config.button.reset_profile",    "Reset profile to defaults"},
         {"config.confirm_reset",           "Reset this profile to defaults?\nAll coords, craft / map / deposit settings and stats will be cleared."},
+
+        // Settings tabs (top of the panel — Hotkeys is global, Coords is
+        // per-profile).
+        {"settings.tab.hotkeys",                      "Hotkeys"},
+        {"settings.tab.coords",                       "Coordinates"},
+
+        // Hotkeys section (Settings panel, top). Action labels are short
+        // imperatives so the modal's "Rebind: <label>" reads naturally.
+        {"settings.section.hotkeys",                  "Hotkeys"},
+        {"settings.hotkeys.reset_all",                "Reset all hotkeys to defaults"},
+        {"settings.hotkeys.rebind_title_fmt",         "Rebind: %s"},
+        {"settings.hotkeys.rebind_prompt",            "(press a key combination)"},
+        {"settings.hotkeys.rebind_hint",              "Press a non-modifier key to commit  •  ESC to cancel"},
+        {"settings.hotkeys.rebind_err_conflict_fmt",  "%s is already bound to: %s"},
+        {"settings.hotkeys.rebind_err_unavailable_fmt","%s is unavailable — another app may own it"},
+
+        {"hotkey.action.task.stop",          "Stop task"},
+        {"hotkey.action.overlay.toggle",     "Toggle overlay"},
+        {"hotkey.action.capture.orb1",       "Capture orb1"},
+        {"hotkey.action.capture.orb2",       "Capture orb2"},
+        {"hotkey.action.capture.orb3",       "Capture orb3"},
+        {"hotkey.action.capture.baseItem",   "Capture base item"},
+        {"hotkey.action.capture.p01Item",    "Capture p01 item"},
+        {"hotkey.action.capture.p10Item",    "Capture p10 item"},
+        {"hotkey.action.capture.invBase",    "Capture inv base"},
+        {"hotkey.action.capture.invP01",     "Capture inv p01"},
+        {"hotkey.action.capture.invP10",     "Capture inv p10"},
 
         // Craft panel — affix textbox is gone; rules now live in the bound
         // .txt file (see affix_lib.* keys).
@@ -117,8 +148,8 @@ const Table& zhTable() {
         {"menu.app.appearance.light",      "浅色"},
         {"menu.app.appearance.dark",       "深色"},
 
-        // 侧栏
-        {"panel.config",                   "配置"},
+        // 侧栏（与 PoE Overlay 一致，将原"配置"改为"设置"，承载热键自定义）
+        {"panel.config",                   "设置"},
         {"panel.craft",                    "改造"},
         {"panel.map",                      "地图"},
         {"panel.deposit",                  "入库"},
@@ -147,7 +178,7 @@ const Table& zhTable() {
         {"affix_lib.lines_fmt",            "%d 条规则"},
         {"affix_lib.poere_prefix",         "支持"},
 
-        // 配置面板（Save 已去掉 — 自动保存；Reset 走二次确认）
+        // 设置面板（Save 已去掉 — 自动保存；Reset 走二次确认）
         {"config.no_settings",             "未加载配置。"},
         {"config.no_active_profile_fmt",   "没有活动配置档（找不到 '%s'）。"},
         {"config.active_profile_fmt",      "当前配置档：%s  [%s]"},
@@ -157,6 +188,31 @@ const Table& zhTable() {
         {"config.unset",                   "(未设)"},
         {"config.button.reset_profile",    "重置为默认值"},
         {"config.confirm_reset",           "确认将该配置档重置为默认值？\n所有坐标、改造 / 地图 / 入库设置以及统计都会被清空。"},
+
+        // 设置面板顶部分页
+        {"settings.tab.hotkeys",                      "热键"},
+        {"settings.tab.coords",                       "坐标"},
+
+        // 热键自定义（设置面板顶部）
+        {"settings.section.hotkeys",                  "热键"},
+        {"settings.hotkeys.reset_all",                "全部恢复为默认热键"},
+        {"settings.hotkeys.rebind_title_fmt",         "重新绑定：%s"},
+        {"settings.hotkeys.rebind_prompt",            "（请按下组合键）"},
+        {"settings.hotkeys.rebind_hint",              "按下非修饰键确认  •  按 ESC 取消"},
+        {"settings.hotkeys.rebind_err_conflict_fmt",  "%s 已绑定到：%s"},
+        {"settings.hotkeys.rebind_err_unavailable_fmt","%s 当前不可用 — 可能被别的程序占用"},
+
+        {"hotkey.action.task.stop",          "停止任务"},
+        {"hotkey.action.overlay.toggle",     "显示/隐藏叠加层"},
+        {"hotkey.action.capture.orb1",       "捕获 orb1"},
+        {"hotkey.action.capture.orb2",       "捕获 orb2"},
+        {"hotkey.action.capture.orb3",       "捕获 orb3"},
+        {"hotkey.action.capture.baseItem",   "捕获基础物品锚点"},
+        {"hotkey.action.capture.p01Item",    "捕获 p01 物品锚点"},
+        {"hotkey.action.capture.p10Item",    "捕获 p10 物品锚点"},
+        {"hotkey.action.capture.invBase",    "捕获背包基础锚点"},
+        {"hotkey.action.capture.invP01",     "捕获背包 p01 锚点"},
+        {"hotkey.action.capture.invP10",     "捕获背包 p10 锚点"},
 
         // 改造面板 — 词缀文本框已去掉；规则改为外部编辑器编辑 .txt。
         {"craft.batch_mode",               "批量模式"},

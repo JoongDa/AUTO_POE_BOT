@@ -4,6 +4,7 @@
 #include <poebot/gui/main_window.hpp>
 #include <poebot/gui/panel.hpp>
 
+#include <poebot/hotkey/binding.hpp>
 #include <poebot/hotkey/hotkey_manager.hpp>
 #include <poebot/task/task_runner.hpp>
 #include <poebot/win/window.hpp>
@@ -11,6 +12,8 @@
 #include <chrono>
 #include <filesystem>
 #include <memory>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace poebot::gui {
@@ -50,6 +53,24 @@ private:
     void registerHotkeys();
     void refreshGameWindow();
 
+    // Atomic rebind: drops the old registration for `id`, tries to register
+    // the new combo, and rolls back to the previous binding if registration
+    // fails (system-wide conflict, e.g. another app owns the combo). Refuses
+    // up-front if `newBinding` is already used by another action in our own
+    // map. Returns true on success, false on any conflict / failure (the
+    // caller renders an inline message; settings remain consistent).
+    bool rebindHotkey(const std::string& id,
+                      poebot::hotkey::HotkeyBinding newBinding);
+
+    // Per-action callback bodies — extracted from the old registerHotkeys
+    // so registerHotkeys and rebindHotkey can rebuild the same callback
+    // for any action without duplicating the work.
+    void triggerCapture(const std::string& coordName);
+    void triggerStop();
+    void toggleOverlay();
+
+    poebot::hotkey::HotkeyManager::Callback makeCallbackFor(const std::string& id);
+
     void renderFrame();
 
     MainWindow                              window_;
@@ -71,6 +92,10 @@ private:
 
     // Phase 3.1
     poebot::hotkey::HotkeyManager           hotkeyMgr_;
+    // action id -> HotkeyManager registration id, kept in sync with the
+    // bindings in settings_.hotkeys. rebindHotkey() drains and rebuilds
+    // a single entry; clear()/registerHotkeys() rebuild the whole map.
+    std::unordered_map<std::string, int>    hotkeyIds_;
     poebot::win::GameWindow                 gameWindow_;
     CaptureService                          capture_;
 
