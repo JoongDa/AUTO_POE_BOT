@@ -2,13 +2,14 @@
 #include <filesystem>
 #include <string>
 
-// UI for browsing, loading, and editing affix libraries. Shared between
-// the Craft and Map panels — they pass their own bound strings so the
-// widget reads/writes the right profile field without knowing which one.
+// UI for binding the active panel (Craft or Map) to one of the on-disk
+// affix libraries. Each library is one .txt file under `dir`; rules are
+// `|`-separated regex (one per line is conventional). Editing happens in
+// the user's external editor — the widget never owns a textbox.
 //
 // Typical usage:
 //   affixLibraryWidget(
-//       ctx.affixLibraryDir ? *ctx.affixLibraryDir : std::filesystem::path{},
+//       ctx.affixLibraryDir ? *ctx.affixLibraryDir / "craft" : std::filesystem::path{},
 //       prof->craft.affixLibrary,
 //       prof->craft.affixes,
 //       "craft",     // id scope — keeps ImGui widget ids unique per panel
@@ -17,18 +18,25 @@
 //
 // The widget renders:
 //   - A Combo of library names (current selection comes from `selected`).
-//   - New / Save / Rename / Delete buttons with inline modal prompts.
-//   - A subtle "unsaved" indicator when `content` != on-disk library.
+//   - Edit / Reload / Folder buttons:
+//       * Edit   → ShellExecute the bound .txt with the OS default editor.
+//       * Reload → force re-read the bound file (manual fallback if the
+//                  file watcher missed an mtime change).
+//       * Folder → open the dir in Explorer; new/rename/delete go through
+//                  the file system (no in-app file manager).
+//   - An inline "(N rules)" status next to the combo.
 //   - A clickable "Supports https://poe.re/" hint.
-//
-// It does NOT render the affix textbox itself — that stays in each panel
-// because it uses panel-specific width / label / imgui id already.
+//   - An always-on file watcher that auto-reloads `content` when the bound
+//     .txt changes mtime — round-trip after the user saves in their editor
+//     is just "switch back to GUI", no Reload click needed.
 namespace poebot::gui {
 
 // Returns true if `selected` or `content` was modified this frame (caller
-// should set ctx.dirty). `content` may be mutated when the user picks a
-// library from the dropdown; `selected` may be mutated by any library
-// action. Pass an empty `dir` to render the widget in a disabled state.
+// should set ctx.dirty). `content` may be mutated by:
+//   - the user picking a library from the dropdown,
+//   - the file watcher noticing the bound file changed on disk,
+//   - the user clicking Reload.
+// Pass an empty `dir` to render the widget in a disabled state.
 void affixLibraryWidget(const std::filesystem::path& dir,
                         std::string& selected,
                         std::string& content,

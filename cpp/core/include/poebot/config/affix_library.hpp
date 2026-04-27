@@ -53,4 +53,12 @@ bool deleteAffixLibrary(const std::filesystem::path& dir,
 // chars. Keeps names short enough to fit the dropdown comfortably.
 bool isValidAffixLibraryName(std::string_view name);
 
+// First-run seed: if `dir` has no *.txt yet (fresh install or empty profile),
+// drop one starter `default.txt` so the user has something to bind/edit
+// instead of staring at "(none)". `category` selects the seed content
+// ("craft" → item-mod patterns; "map" → map-mod patterns). No-op if any
+// library already exists or if the dir can't be created.
+void seedDefaultAffixLibraries(const std::filesystem::path& dir,
+                               std::string_view category);
+
 }  // namespace poebot::config

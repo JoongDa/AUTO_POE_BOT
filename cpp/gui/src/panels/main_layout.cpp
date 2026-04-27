@@ -13,54 +13,48 @@ namespace {
 constexpr float kSidebarWidth  = 130.0f;
 constexpr float kLogPanelWidth = 360.0f;
 
-void renderMenuBar(PanelContext& ctx, bool& wantExit) {
+void renderMenuBar(PanelContext& ctx) {
     using poebot::i18n::tr;
     if (!ImGui::BeginMenuBar()) return;
 
-    if (ImGui::BeginMenu(tr("menu.profile"))) {
-        if (ctx.settings) {
-            for (auto& [key, prof] : ctx.settings->profiles) {
-                const bool selected = (ctx.settings->activeProfile == key);
-                const char* label = prof.displayName.empty() ? key.c_str() : prof.displayName.c_str();
-                if (ImGui::MenuItem(label, nullptr, selected)) {
-                    if (!selected) {
-                        ctx.settings->activeProfile = key;
-                        ctx.dirty = true;
-                    }
-                }
-            }
-        }
-        ImGui::EndMenu();
-    }
+    // Profile segmented control on the left of the bar — one click swaps
+    // between PoE 1 / PoE 2 instead of the previous two-click dropdown.
+    // Selected segment uses the accent color; unselected is transparent.
+    // Adjacent segments touch (ItemSpacing.x = 0) so they read as one
+    // segmented control rather than two independent buttons.
+    if (ctx.settings) {
+        const ImVec4 accent = ImGui::GetStyle().Colors[ImGuiCol_ButtonActive];
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                            ImVec2(0, ImGui::GetStyle().ItemSpacing.y));
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
+        bool first = true;
+        for (auto& [key, prof] : ctx.settings->profiles) {
+            if (!first) ImGui::SameLine(0, 0);
+            first = false;
 
-    if (ImGui::BeginMenu(tr("menu.language"))) {
-        if (ctx.settings) {
-            const bool zh = ctx.settings->language == "zh";
-            const bool en = ctx.settings->language == "en";
-            // Language labels stay in their own language so each is always
-            // recognizable regardless of the currently active table.
-            if (ImGui::MenuItem(tr("menu.language.zh"), nullptr, zh)) {
-                if (!zh) {
-                    ctx.settings->language = "zh";
-                    poebot::i18n::setLanguage("zh");
+            const bool selected = (ctx.settings->activeProfile == key);
+            const char* label   = prof.displayName.empty()
+                                  ? key.c_str()
+                                  : prof.displayName.c_str();
+
+            if (selected) {
+                ImGui::PushStyleColor(ImGuiCol_Button,        accent);
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, accent);
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive,  accent);
+            } else {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+            }
+            ImGui::PushID(key.c_str());
+            if (ImGui::Button(label)) {
+                if (!selected) {
+                    ctx.settings->activeProfile = key;
                     ctx.dirty = true;
                 }
             }
-            if (ImGui::MenuItem(tr("menu.language.en"), nullptr, en)) {
-                if (!en) {
-                    ctx.settings->language = "en";
-                    poebot::i18n::setLanguage("en");
-                    ctx.dirty = true;
-                }
-            }
+            ImGui::PopID();
+            ImGui::PopStyleColor(selected ? 3 : 1);
         }
-        ImGui::EndMenu();
-    }
-
-    if (ImGui::BeginMenu(tr("menu.app"))) {
-        // Appearance lives in the bottom-right floating button (renderAppearanceFab).
-        if (ImGui::MenuItem(tr("menu.app.exit"))) wantExit = true;
-        ImGui::EndMenu();
+        ImGui::PopStyleVar(2);
     }
 
     // Right-aligned status: capture countdown + game window state.
@@ -171,6 +165,7 @@ void renderAppearanceFab(PanelContext& ctx) {
     if (clicked) ImGui::OpenPopup("##AppearancePopup");
 
     if (ImGui::BeginPopup("##AppearancePopup")) {
+        // Appearance section ----------------------------------------------
         ImGui::TextDisabled("%s", tr("menu.app.appearance"));
         ImGui::Separator();
 
@@ -188,6 +183,33 @@ void renderAppearanceFab(PanelContext& ctx) {
                 if (ctx.onAppearanceChanged) ctx.onAppearanceChanged();
             }
         }
+
+        // Language section ------------------------------------------------
+        // Folded into the same popup (was its own top-level menu) because
+        // language is a once-per-install setting, not a frequent toggle.
+        // Labels stay in their own language so each is recognizable
+        // regardless of the currently active table.
+        ImGui::Spacing();
+        ImGui::TextDisabled("%s", tr("menu.language"));
+        ImGui::Separator();
+
+        const bool zh = ctx.settings->language == "zh";
+        const bool en = ctx.settings->language == "en";
+        if (ImGui::MenuItem(tr("menu.language.zh"), nullptr, zh)) {
+            if (!zh) {
+                ctx.settings->language = "zh";
+                poebot::i18n::setLanguage("zh");
+                ctx.dirty = true;
+            }
+        }
+        if (ImGui::MenuItem(tr("menu.language.en"), nullptr, en)) {
+            if (!en) {
+                ctx.settings->language = "en";
+                poebot::i18n::setLanguage("en");
+                ctx.dirty = true;
+            }
+        }
+
         ImGui::EndPopup();
     }
 }
@@ -255,8 +277,7 @@ void renderSidebar(const std::vector<std::unique_ptr<Panel>>& panels,
 }  // namespace
 
 void renderMainLayout(const std::vector<std::unique_ptr<Panel>>& panels,
-                      PanelContext& ctx,
-                      bool& wantExit) {
+                      PanelContext& ctx) {
     const ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(vp->WorkPos);
     ImGui::SetNextWindowSize(vp->WorkSize);
@@ -281,7 +302,7 @@ void renderMainLayout(const std::vector<std::unique_ptr<Panel>>& panels,
     ImGui::Begin("##MainHost", nullptr, kHostFlags);
     ImGui::PopStyleVar(3);
 
-    renderMenuBar(ctx, wantExit);
+    renderMenuBar(ctx);
 
     // Re-push WindowPadding so each child window gets an internal inset
     // (BeginChild inherits the *current* style; the host's padding was

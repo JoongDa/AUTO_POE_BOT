@@ -7,13 +7,15 @@
 namespace poebot::gui::panels {
 
 // Renders a single full-viewport host window containing:
-//   - a menu bar (Profile / Language / App)
-//   - a tab bar with each Tab-kind panel
-//   - a fixed-height log strip at the bottom with the Log-kind panel
-// Phase 3 can upgrade this to a proper DockSpace once panels have content
-// worth rearranging.
+//   - a top bar with the [PoE 1 | PoE 2] segmented profile switch and
+//     right-aligned status (capture countdown + game-window state)
+//   - a left sidebar with each Tab-kind panel (incl. the Appearance/Language
+//     FAB at its bottom-right)
+//   - the active tab panel in the middle
+//   - a fixed-width log strip on the right with the Log-kind panel
+// Closing is owned by the host window (title-bar X → WM_QUIT), so this
+// layout no longer needs a wantExit pipe-through.
 void renderMainLayout(const std::vector<std::unique_ptr<Panel>>& panels,
-                      PanelContext& ctx,
-                      bool& wantExit);
+                      PanelContext& ctx);
 
 }  // namespace poebot::gui::panels

@@ -158,6 +158,41 @@ bool deleteAffixLibrary(const std::filesystem::path& dir,
     return true;
 }
 
+void seedDefaultAffixLibraries(const std::filesystem::path& dir,
+                               std::string_view category) {
+    if (!ensureAffixLibraryDir(dir)) return;
+    // Skip if any library already exists — we only seed on a virgin folder
+    // so we never overwrite the user's edits.
+    if (!listAffixLibraries(dir).empty()) return;
+
+    // Starter content. These are deliberately generic placeholders the user
+    // is expected to edit — we ship just enough to make the dropdown / matcher
+    // testable on first launch instead of greeting the user with "(none)".
+    // Patterns target the international (English) PoE client text; users on
+    // other locales swap them via the external editor.
+    std::string_view content;
+    if (category == "craft") {
+        content =
+            "\\+\\d+% to all Elemental Resistances\n"
+            "\\+\\d+ to maximum Life\n"
+            "\\+\\d+% increased Spell Damage\n"
+            "\\+\\d+% increased Attack Damage\n"
+            "\\+\\d+ to Strength\n"
+            "\\+\\d+ to Dexterity\n"
+            "\\+\\d+ to Intelligence\n";
+    } else if (category == "map") {
+        content =
+            "Item Quantity: \\+\\d+%\n"
+            "Item Rarity: \\+\\d+%\n"
+            "Pack Size: \\+\\d+%\n";
+    } else {
+        return;  // unknown category — caller passed something we don't seed
+    }
+    saveAffixLibrary(dir, "default", content);
+    spdlog::info("affix_library: seeded default '{}' library at {}",
+                 std::string(category), dir.string());
+}
+
 bool isValidAffixLibraryName(std::string_view name) {
     if (name.empty() || name.size() > 64) return false;
     // Forbid the Windows reserved characters plus path separators. We don't

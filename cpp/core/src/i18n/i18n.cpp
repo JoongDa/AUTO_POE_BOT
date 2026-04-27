@@ -13,16 +13,17 @@ using Table = std::unordered_map<std::string_view, const char*>;
 // another language.
 const Table& enTable() {
     static const Table t = {
-        // Menu bar
+        // Top bar (the legacy Profile / Language / App menus collapsed:
+        //   - Profile is now a segmented control rendered inline.
+        //   - Language and Appearance live in the FAB popup.
+        //   - The standalone App > Exit was redundant with the title-bar X.)
         {"menu.profile",                   "Profile"},
         {"menu.language",                  "Language"},
         {"menu.language.zh",               "中文"},
         {"menu.language.en",               "English"},
-        {"menu.app",                       "App"},
         {"menu.app.appearance",            "Appearance"},
         {"menu.app.appearance.light",      "Light"},
         {"menu.app.appearance.dark",       "Dark"},
-        {"menu.app.exit",                  "Exit"},
 
         // Sidebar tabs
         {"panel.config",                   "Config"},
@@ -44,50 +45,45 @@ const Table& enTable() {
         {"common.ok",                      "OK"},
         {"common.cancel",                  "Cancel"},
 
-        // Affix library widget (shared by Craft and Map panels)
+        // Affix library widget (shared by Craft and Map panels). Editing
+        // moved out of the GUI — the widget only binds, reloads, and reveals
+        // the folder. New / Rename / Delete go through the file system.
         {"affix_lib.label",                "Library"},
         {"affix_lib.none",                 "(none)"},
-        {"affix_lib.new",                  "New"},
-        {"affix_lib.save",                 "Save"},
-        {"affix_lib.rename",               "Rename"},
-        {"affix_lib.delete",               "Delete"},
-        {"affix_lib.modified_suffix",      "(modified)"},
-        {"affix_lib.invalid_name",         "Invalid name (letters, digits, -_. only; max 64)"},
-        {"affix_lib.prompt_new",           "New library name:"},
-        {"affix_lib.prompt_rename",        "Rename library to:"},
-        {"affix_lib.confirm_delete_fmt",   "Delete library '%s'? This cannot be undone."},
+        {"affix_lib.edit",                 "Edit"},
+        {"affix_lib.reload",               "Reload"},
+        {"affix_lib.folder",               "Folder"},
+        {"affix_lib.lines_fmt",            "%d rules"},
         {"affix_lib.poere_prefix",         "Supports"},
 
-        // Config panel
+        // Config panel — Save is gone (auto-save handles it); Reset stays
+        // but now goes through a confirm modal.
         {"config.no_settings",             "No settings loaded."},
         {"config.no_active_profile_fmt",   "No active profile ('%s' not found)."},
         {"config.active_profile_fmt",      "Active profile: %s  [%s]"},
-        {"config.window_match_fmt",        "Window match: \"%s\""},
-        {"config.tip_capture",             "Tip: hover the target in the game, then press the hotkey. You have 3 seconds to switch windows."},
         {"config.section.orbs",            "Currency / orb slots"},
         {"config.section.anchors",         "Craft / map item grid anchors"},
         {"config.section.inventory",       "Inventory deposit anchors"},
         {"config.unset",                   "(unset)"},
-        {"config.button.save",             "Save"},
         {"config.button.reset_profile",    "Reset profile to defaults"},
+        {"config.confirm_reset",           "Reset this profile to defaults?\nAll coords, craft / map / deposit settings and stats will be cleared."},
 
-        // Craft panel
+        // Craft panel — affix textbox is gone; rules now live in the bound
+        // .txt file (see affix_lib.* keys).
         {"craft.batch_mode",               "Batch mode"},
         {"craft.columns",                  "Columns"},
         {"craft.rows",                     "Rows"},
-        {"craft.affixes_label",            "Affixes (|-separated regex)"},
         {"craft.stats_fmt",                "Stats  ops=%d  hits=%d"},
         {"craft.reset_stats",              "Reset stats"},
         {"craft.start",                    "Start craft"},
         {"craft.progress_fmt",             "Crafting: item %d / %d  |  ops=%d  hits=%d"},
 
-        // Map panel
+        // Map panel — affix textbox gone, same reason as Craft.
         {"map.mode.alch_scour",            "Alch + Scour"},
         {"map.mode.chaos",                 "Chaos"},
         {"map.batch_mode",                 "Batch mode"},
         {"map.columns",                    "Columns"},
         {"map.rows",                       "Rows"},
-        {"map.affixes_label",              "Affixes (|-separated regex)"},
         {"map.stats_fmt",                  "Stats  ops=%d  hits=%d"},
         {"map.reset_stats",                "Reset stats"},
         {"map.start",                      "Start map roll"},
@@ -112,16 +108,14 @@ const Table& enTable() {
 
 const Table& zhTable() {
     static const Table t = {
-        // 菜单栏
+        // 顶栏（原 Profile / Language / App 三菜单已合并）
         {"menu.profile",                   "配置档"},
         {"menu.language",                  "语言"},
         {"menu.language.zh",               "中文"},
         {"menu.language.en",               "English"},
-        {"menu.app",                       "应用"},
         {"menu.app.appearance",            "外观"},
         {"menu.app.appearance.light",      "浅色"},
         {"menu.app.appearance.dark",       "深色"},
-        {"menu.app.exit",                  "退出"},
 
         // 侧栏
         {"panel.config",                   "配置"},
@@ -143,50 +137,42 @@ const Table& zhTable() {
         {"common.ok",                      "确定"},
         {"common.cancel",                  "取消"},
 
-        // 词条库组件（改造与地图面板共用）
+        // 词条库组件（改造与地图面板共用）— 编辑下放到外部编辑器，
+        // 控件只负责绑定 / 重载 / 打开文件夹。
         {"affix_lib.label",                "词条库"},
         {"affix_lib.none",                 "（未选）"},
-        {"affix_lib.new",                  "新建"},
-        {"affix_lib.save",                 "保存"},
-        {"affix_lib.rename",               "重命名"},
-        {"affix_lib.delete",               "删除"},
-        {"affix_lib.modified_suffix",      "（未保存）"},
-        {"affix_lib.invalid_name",         "名称不合法（不能含 \\ / : * ? \" < > |，最长 64 字）"},
-        {"affix_lib.prompt_new",           "新建词条库名称："},
-        {"affix_lib.prompt_rename",        "重命名为："},
-        {"affix_lib.confirm_delete_fmt",   "确认删除词条库 '%s'？此操作不可撤销。"},
+        {"affix_lib.edit",                 "编辑"},
+        {"affix_lib.reload",               "重载"},
+        {"affix_lib.folder",               "打开目录"},
+        {"affix_lib.lines_fmt",            "%d 条规则"},
         {"affix_lib.poere_prefix",         "支持"},
 
-        // 配置面板
+        // 配置面板（Save 已去掉 — 自动保存；Reset 走二次确认）
         {"config.no_settings",             "未加载配置。"},
         {"config.no_active_profile_fmt",   "没有活动配置档（找不到 '%s'）。"},
         {"config.active_profile_fmt",      "当前配置档：%s  [%s]"},
-        {"config.window_match_fmt",        "匹配窗口：\"%s\""},
-        {"config.tip_capture",             "提示：先在游戏里把鼠标移到目标位置，再按快捷键。切窗口有 3 秒缓冲。"},
         {"config.section.orbs",            "通货 / 球类坐标"},
         {"config.section.anchors",         "改造 / 地图物品网格锚点"},
         {"config.section.inventory",       "背包入库锚点"},
         {"config.unset",                   "(未设)"},
-        {"config.button.save",             "保存"},
         {"config.button.reset_profile",    "重置为默认值"},
+        {"config.confirm_reset",           "确认将该配置档重置为默认值？\n所有坐标、改造 / 地图 / 入库设置以及统计都会被清空。"},
 
-        // 改造面板
+        // 改造面板 — 词缀文本框已去掉；规则改为外部编辑器编辑 .txt。
         {"craft.batch_mode",               "批量模式"},
         {"craft.columns",                  "列数"},
         {"craft.rows",                     "行数"},
-        {"craft.affixes_label",            "词缀（用 | 分隔的正则）"},
         {"craft.stats_fmt",                "统计  操作=%d  命中=%d"},
         {"craft.reset_stats",              "清空统计"},
         {"craft.start",                    "开始改造"},
         {"craft.progress_fmt",             "改造中:  第 %d / %d 件  |  操作=%d  命中=%d"},
 
-        // 地图面板
+        // 地图面板 — 同上。
         {"map.mode.alch_scour",            "点金+重铸"},
         {"map.mode.chaos",                 "混沌石"},
         {"map.batch_mode",                 "批量模式"},
         {"map.columns",                    "列数"},
         {"map.rows",                       "行数"},
-        {"map.affixes_label",              "词缀（用 | 分隔的正则）"},
         {"map.stats_fmt",                  "统计  操作=%d  命中=%d"},
         {"map.reset_stats",                "清空统计"},
         {"map.start",                      "开始洗图"},

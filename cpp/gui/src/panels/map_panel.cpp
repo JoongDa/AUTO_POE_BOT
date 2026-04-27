@@ -16,10 +16,6 @@
 
 namespace poebot::gui::panels {
 
-namespace {
-constexpr size_t kAffixBufCap = 4096;
-}
-
 void MapPanel::render(PanelContext& ctx) {
     using poebot::i18n::tr;
     if (!ctx.settings || !ctx.settings->active()) {
@@ -50,18 +46,9 @@ void MapPanel::render(PanelContext& ctx) {
     if (ImGui::IsItemDeactivatedAfterEdit()) dirty = true;
     ImGui::EndDisabled();
 
-    char buf[kAffixBufCap];
-    std::snprintf(buf, sizeof(buf), "%s", m.affixes.c_str());
-    // Match slider width so frames line up; see note in craft_panel.cpp.
-    if (ImGui::InputTextMultiline(tr("map.affixes_label"),
-                                  buf, sizeof(buf),
-                                  ImVec2(ImGui::CalcItemWidth(), 120))) {
-        m.affixes = buf;
-        dirty = true;
-    }
-
-    // See craft_panel for context on the shared library widget. Map uses
-    // its own subfolder so its library list stays free of craft templates.
+    // See craft_panel for context: editing moved to the external editor;
+    // the widget here only binds + reloads. Map uses its own subfolder so
+    // its library list stays free of craft templates.
     {
         bool libChanged = false;
         const std::filesystem::path dir = ctx.affixLibraryDir

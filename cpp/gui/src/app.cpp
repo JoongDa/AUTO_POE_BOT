@@ -27,6 +27,11 @@ namespace poebot::gui {
 namespace {
 constexpr auto kSaveDebounce        = std::chrono::milliseconds(500);
 constexpr auto kWindowRefreshPeriod = std::chrono::seconds(1);
+// How often we re-assert HWND_TOPMOST. 1Hz is plenty — the only reason we
+// re-pin at all is to defend against other topmost windows that occasionally
+// stack above us (RGB utilities, OBS captures, etc.). A more aggressive
+// period would burn CPU for no observable benefit.
+constexpr auto kTopmostPinPeriod    = std::chrono::seconds(1);
 }
 
 int App::run(HINSTANCE hInstance, int nCmdShow) {
@@ -57,7 +62,13 @@ int App::run(HINSTANCE hInstance, int nCmdShow) {
         return 2;
     }
 
-    window_.show(nCmdShow);
+    // Ignore the OS-supplied nCmdShow on purpose: SW_SHOWNORMAL would
+    // activate the window on startup and yank focus from the game (which
+    // is exactly what the overlay flags are trying to prevent). SW_SHOWNA
+    // displays at the same z-position without activating, matching how F9
+    // un-hides during a session — startup behaves like un-hiding.
+    (void)nCmdShow;
+    window_.show(SW_SHOWNA);
 
     initImGui();
     registerHotkeys();
@@ -88,6 +99,17 @@ int App::run(HINSTANCE hInstance, int nCmdShow) {
         }
         backend_.applyPendingResize();
         refreshGameWindow();
+
+        // Re-pin to top of the z-order ~1Hz. Using SWP_NOACTIVATE so this
+        // never steals focus; cheap when the window is already topmost.
+        if (windowVisible_ && window_.hwnd()) {
+            auto now = std::chrono::steady_clock::now();
+            if (now - lastTopmostPin_ >= kTopmostPinPeriod) {
+                ::SetWindowPos(window_.hwnd(), HWND_TOPMOST, 0, 0, 0, 0,
+                               SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+                lastTopmostPin_ = now;
+            }
+        }
 
         // Tick capture countdown; if a coord was just written, mark dirty.
         if (capture_.tick()) {
@@ -177,26 +199,34 @@ void App::onActiveProfileChanged() {
     const std::string& name = settings_.activeProfile;
     affixLibraryDir_ = poebot::config::affixLibraryDirFor(settingsRoot_, name);
 
-    // Each profile keeps its own craft/ and map/ library folders — make
-    // sure they exist so the picker doesn't start disabled on first run.
-    poebot::config::ensureAffixLibraryDir(affixLibraryDir_ / "craft");
-    poebot::config::ensureAffixLibraryDir(affixLibraryDir_ / "map");
+    // Each profile keeps its own craft/ and map/ library folders. The seed
+    // call is a no-op once any *.txt exists, so it only fires on first run
+    // (or after the user nukes the folder) — never overwrites their work.
+    const auto craftDir = affixLibraryDir_ / "craft";
+    const auto mapDir   = affixLibraryDir_ / "map";
+    poebot::config::ensureAffixLibraryDir(craftDir);
+    poebot::config::ensureAffixLibraryDir(mapDir);
+    poebot::config::seedDefaultAffixLibraries(craftDir, "craft");
+    poebot::config::seedDefaultAffixLibraries(mapDir,   "map");
 
-    // Auto-load the active profile's bound library into its textboxes. If
-    // the library was renamed/deleted outside the app, leave whatever's
-    // currently in the profile — the dropdown will show "(none)" until
-    // the user picks again.
+    // Auto-bind + auto-load the active profile's library content. If no
+    // library is bound (fresh profile) but one exists on disk (e.g. the
+    // just-seeded "default"), pick the first one so the user starts with a
+    // valid selection instead of having to manually open the dropdown.
     if (auto* prof = settings_.active()) {
-        if (!prof->craft.affixLibrary.empty()) {
-            auto s = poebot::config::loadAffixLibrary(
-                affixLibraryDir_ / "craft", prof->craft.affixLibrary);
-            if (!s.empty()) prof->craft.affixes = std::move(s);
-        }
-        if (!prof->map.affixLibrary.empty()) {
-            auto s = poebot::config::loadAffixLibrary(
-                affixLibraryDir_ / "map", prof->map.affixLibrary);
-            if (!s.empty()) prof->map.affixes = std::move(s);
-        }
+        auto bindFirstAndLoad = [](std::string& bound, std::string& content,
+                                   const std::filesystem::path& d) {
+            if (bound.empty()) {
+                auto libs = poebot::config::listAffixLibraries(d);
+                if (!libs.empty()) bound = libs.front();
+            }
+            if (!bound.empty()) {
+                auto s = poebot::config::loadAffixLibrary(d, bound);
+                if (!s.empty()) content = std::move(s);
+            }
+        };
+        bindFirstAndLoad(prof->craft.affixLibrary, prof->craft.affixes, craftDir);
+        bindFirstAndLoad(prof->map.affixLibrary,   prof->map.affixes,   mapDir);
     }
 
     lastActiveProfile_ = name;
@@ -282,6 +312,33 @@ void App::registerHotkeys() {
         });
     } catch (const std::exception& e) {
         spdlog::error("registerHotkey(End) threw: {}", e.what());
+    }
+
+    // F9 hide/show toggle (matches PoE Overlay's binding). With the window
+    // pinned in WS_EX_TOOLWINDOW it doesn't appear in Alt+Tab or the taskbar,
+    // so F9 is the *only* way back from a hidden state — keep this binding
+    // simple and conflict-free.
+    //
+    //   visible → hidden:  SW_HIDE
+    //   hidden  → visible: SW_SHOWNA  (NOT SW_SHOW, which activates and
+    //                                  steals focus from the game)
+    try {
+        hotkeyMgr_.registerHotkey(Mod::NoRepeat, VK_F9, [this]() {
+            HWND h = window_.hwnd();
+            if (!h) return;
+            windowVisible_ = !windowVisible_;
+            ::ShowWindow(h, windowVisible_ ? SW_SHOWNA : SW_HIDE);
+            if (windowVisible_) {
+                // Re-pin immediately on un-hide so we don't fall behind the
+                // game until the next periodic tick.
+                ::SetWindowPos(h, HWND_TOPMOST, 0, 0, 0, 0,
+                               SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+                lastTopmostPin_ = std::chrono::steady_clock::now();
+            }
+            spdlog::info("F9: overlay {}", windowVisible_ ? "shown" : "hidden");
+        });
+    } catch (const std::exception& e) {
+        spdlog::error("registerHotkey(F9) threw: {}", e.what());
     }
 }
 
@@ -575,7 +632,7 @@ void App::renderFrame() {
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
 
-    panels::renderMainLayout(panels_, panelCtx_, wantExit_);
+    panels::renderMainLayout(panels_, panelCtx_);
 
     ImGui::Render();
     backend_.beginFrame(clearColor_);

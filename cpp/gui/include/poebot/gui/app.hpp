@@ -81,6 +81,15 @@ private:
     std::chrono::steady_clock::time_point       lastSaveAt_{};
     std::chrono::steady_clock::time_point       lastWindowRefresh_{};
 
+    // Overlay state. F9 toggles `windowVisible_` (ShowWindow SW_HIDE /
+    // SW_SHOWNA — never SW_SHOW, which would activate and steal focus from
+    // the game). `lastTopmostPin_` throttles the periodic re-pin that keeps
+    // us above any other topmost windows that might have stacked on top
+    // (e.g. RGB-control utilities, password managers); without this nudge
+    // those can occasionally cover us mid-session.
+    bool                                        windowVisible_ = true;
+    std::chrono::steady_clock::time_point       lastTopmostPin_{};
+
     // Cached D3D11 clear color; kept in sync with the active theme so resizes
     // don't flash the opposite color behind the ImGui surface.
     float clearColor_[4] = {0.96f, 0.96f, 0.97f, 1.0f};

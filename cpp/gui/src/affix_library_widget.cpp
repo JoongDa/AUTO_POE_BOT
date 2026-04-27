@@ -6,24 +6,34 @@
 #include <imgui.h>
 #include <spdlog/spdlog.h>
 
-#include <windows.h>   // ShellExecuteA (WIN32_LEAN_AND_MEAN is set project-wide)
+#include <windows.h>   // ShellExecuteW (WIN32_LEAN_AND_MEAN is set project-wide)
 #include <shellapi.h>
 
-#include <algorithm>
 #include <cstdio>
-#include <cstring>
+#include <map>
+#include <string>
+#include <system_error>
 
 namespace poebot::gui {
 
 namespace {
 
-constexpr size_t kNameBufCap = 96;   // matches isValidAffixLibraryName's 64 + slack
 constexpr const char* kPoeReURL = "https://poe.re/";
 
-// Fire-and-forget URL open. Returns silently on failure — the link is a
-// convenience, not a critical path, so we don't raise anything in-UI.
-void openExternalURL(const char* url) {
-    ::ShellExecuteA(nullptr, "open", url, nullptr, nullptr, SW_SHOWNORMAL);
+// Fire-and-forget URL / file open via the shell. Both the affix file and the
+// poe.re link share the same code path — the shell figures out whether to
+// hand off to the default text editor (.txt → notepad/VSCode) or the default
+// browser (https → browser). Failures are silent: this is a convenience
+// trigger, not a critical path.
+void shellOpen(const std::wstring& target) {
+    ::ShellExecuteW(nullptr, L"open", target.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+}
+void shellOpen(const char* utf8) {
+    int n = ::MultiByteToWideChar(CP_UTF8, 0, utf8, -1, nullptr, 0);
+    if (n <= 0) return;
+    std::wstring w(static_cast<size_t>(n - 1), L'\0');
+    ::MultiByteToWideChar(CP_UTF8, 0, utf8, -1, w.data(), n);
+    shellOpen(w);
 }
 
 // Render text that looks and acts like a browser link: accent color,
@@ -43,96 +53,20 @@ void renderLink(const char* visibleText, const char* url) {
             ImGui::GetColorU32(linkColor));
     }
     if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
-        openExternalURL(url);
+        shellOpen(url);
     }
 }
 
-// Open a named modal by ID. ImGui requires BeginPopupModal to be called
-// unconditionally every frame; we only call OpenPopup on the triggering
-// frame and drive visibility through ImGui's internal state.
-void openModal(const char* id) { ImGui::OpenPopup(id); }
-
-// Small helper: draw a centered modal with a single-line name input and
-// OK/Cancel. Returns true on OK with a valid name; fills `outName` with the
-// user's input (truncated to kNameBufCap). `initialName` prefills the box
-// on open (used by Rename). Must be called every frame while the popup
-// might be open; only writes to outName on confirm.
-bool modalNamePrompt(const char* id,
-                     const char* title,
-                     const char* initialName,
-                     std::string* outName) {
-    // Per-modal storage so typing doesn't clobber on other modals.
-    static char buf_new[kNameBufCap]    = {};
-    static char buf_rename[kNameBufCap] = {};
-    char* buf = (std::strcmp(id, "##AffixLibNew") == 0) ? buf_new : buf_rename;
-
-    // Center the modal on the viewport.
-    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
-                            ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-
-    bool confirmed = false;
-    if (ImGui::BeginPopupModal(id, nullptr,
-                               ImGuiWindowFlags_AlwaysAutoResize |
-                               ImGuiWindowFlags_NoSavedSettings)) {
-        if (ImGui::IsWindowAppearing()) {
-            // Prefill + focus on open.
-            std::snprintf(buf, kNameBufCap, "%s", initialName ? initialName : "");
-            ImGui::SetKeyboardFocusHere();
-        }
-
-        ImGui::TextUnformatted(title);
-        ImGui::Spacing();
-        ImGui::SetNextItemWidth(260.0f);
-        const bool entered = ImGui::InputText(
-            "##name", buf, kNameBufCap,
-            ImGuiInputTextFlags_EnterReturnsTrue);
-
-        const bool valid = poebot::config::isValidAffixLibraryName(buf);
-        if (!valid && buf[0] != '\0') {
-            ImGui::TextDisabled("%s", poebot::i18n::tr("affix_lib.invalid_name"));
-        }
-
-        ImGui::Spacing();
-        ImGui::BeginDisabled(!valid);
-        if (ImGui::Button(poebot::i18n::tr("common.ok"), ImVec2(90, 0)) || entered) {
-            if (outName) *outName = buf;
-            confirmed = true;
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::EndDisabled();
-
-        ImGui::SameLine();
-        if (ImGui::Button(poebot::i18n::tr("common.cancel"), ImVec2(90, 0)) ||
-            ImGui::IsKeyPressed(ImGuiKey_Escape)) {
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::EndPopup();
-    }
-    return confirmed;
-}
-
-// Yes/No confirm modal — used for Delete.
-bool modalConfirm(const char* id, const char* message) {
-    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
-                            ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    bool confirmed = false;
-    if (ImGui::BeginPopupModal(id, nullptr,
-                               ImGuiWindowFlags_AlwaysAutoResize |
-                               ImGuiWindowFlags_NoSavedSettings)) {
-        ImGui::TextUnformatted(message);
-        ImGui::Spacing();
-        if (ImGui::Button(poebot::i18n::tr("common.ok"), ImVec2(90, 0))) {
-            confirmed = true;
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button(poebot::i18n::tr("common.cancel"), ImVec2(90, 0)) ||
-            ImGui::IsKeyPressed(ImGuiKey_Escape)) {
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::EndPopup();
-    }
-    return confirmed;
+// Count newlines in a buffer for the dropdown's "(N)" suffix and the inline
+// status line. One pass, no allocation. Empty buffer reads as 0 rules.
+int countLines(const std::string& s) {
+    if (s.empty()) return 0;
+    int n = 1;
+    for (char c : s) if (c == '\n') ++n;
+    // Trailing '\n' shouldn't inflate the count (text files conventionally
+    // end with one). Treat the post-'\n' empty tail as not-a-rule.
+    if (s.back() == '\n') --n;
+    return n;
 }
 
 }  // namespace
@@ -148,50 +82,78 @@ void affixLibraryWidget(const std::filesystem::path& dir,
     bool changed = false;
     ImGui::PushID(idScope);
 
-    // Refresh library list every frame — it's a directory scan of ~dozens
-    // of tiny files, and doing it on-demand avoids every "did the user
-    // rename a file outside the app?" edge case.
+    // Refresh library list every frame — directory of a few tiny .txt files,
+    // free relative to the rest of frame work, and avoids any "did the user
+    // create/delete/rename a file outside the app?" staleness.
     const auto libs = dir.empty() ? std::vector<std::string>{}
                                   : al::listAffixLibraries(dir);
     const bool dirUsable = !dir.empty();
 
-    // --- Row 1: label + library combo -----------------------------------
+    // --- File watcher ----------------------------------------------------
+    // The user edits libraries in their preferred external editor (notepad,
+    // VSCode, …). On every frame, compare the cached mtime of the bound file
+    // with what's on disk; on change, re-read into `content` and surface a
+    // log line so the user sees the round-trip succeeded.
+    //
+    // The map is keyed by (idScope, name) so craft and map watchers don't
+    // collide even if both happen to bind a same-named library. First sighting
+    // of a key reloads unconditionally — that's how we pick up edits made
+    // while the program was closed (settings.json may carry stale `content`
+    // from the previous session).
+    static std::map<std::string, std::filesystem::file_time_type> watchTimes;
+    if (!selected.empty() && dirUsable) {
+        const auto path = dir / (selected + ".txt");
+        std::error_code ec;
+        const auto t = std::filesystem::last_write_time(path, ec);
+        if (!ec) {
+            const std::string key = std::string(idScope) + "/" + selected;
+            auto it = watchTimes.find(key);
+            const bool firstSeen = (it == watchTimes.end());
+            const bool mtimeMoved = !firstSeen && (it->second != t);
+            if (firstSeen || mtimeMoved) {
+                watchTimes[key] = t;
+                content = al::loadAffixLibrary(dir, selected);
+                if (mtimeMoved) {
+                    spdlog::info("affix_lib: '{}' reloaded from disk ({} bytes)",
+                                 selected, content.size());
+                    changed = true;  // mark settings dirty so cache catches up
+                }
+            }
+        }
+    }
+
+    // --- Row 1: label + library combo + status --------------------------
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(tr("affix_lib.label"));
     ImGui::SameLine();
 
-    // "(modified)" suffix when current content diverges from the on-disk
-    // library — tells the user a Save is pending without a separate icon.
-    bool modified = false;
-    if (!selected.empty() && dirUsable) {
-        const std::string onDisk = al::loadAffixLibrary(dir, selected);
-        modified = (onDisk != content);
-    }
-
-    ImGui::SetNextItemWidth(240.0f);
+    ImGui::SetNextItemWidth(220.0f);
     const char* comboPreview = selected.empty()
         ? tr("affix_lib.none")
         : selected.c_str();
     if (ImGui::BeginCombo("##lib", comboPreview)) {
-        // "(none)" clears selection without touching content.
+        // "(none)" clears the selection (disables matching for this panel
+        // until the user picks again).
         const bool noneSel = selected.empty();
         if (ImGui::Selectable(tr("affix_lib.none"), noneSel)) {
-            if (!noneSel) { selected.clear(); changed = true; }
+            if (!noneSel) {
+                selected.clear();
+                content.clear();
+                changed = true;
+            }
         }
-        ImGui::Separator();
+        if (!libs.empty()) ImGui::Separator();
         for (const auto& n : libs) {
             const bool isSel = (selected == n);
             // Right-align line count for a quick sense of library size.
             char label[128];
             const std::string body = al::loadAffixLibrary(dir, n);
-            int lines = body.empty() ? 0 : 1;
-            for (char c : body) if (c == '\n') ++lines;
-            std::snprintf(label, sizeof(label), "%s  (%d)", n.c_str(), lines);
-
+            std::snprintf(label, sizeof(label), "%s  (%d)",
+                          n.c_str(), countLines(body));
             if (ImGui::Selectable(label, isSel)) {
                 if (!isSel) {
                     selected = n;
-                    content  = body;  // load selected library into textbox
+                    content  = body;
                     changed  = true;
                 }
             }
@@ -199,38 +161,47 @@ void affixLibraryWidget(const std::filesystem::path& dir,
         ImGui::EndCombo();
     }
 
-    if (modified) {
+    // Inline rule count next to the combo so the user can tell at a glance
+    // whether the bound library is empty or full.
+    if (!selected.empty()) {
         ImGui::SameLine();
-        ImGui::TextDisabled("%s", tr("affix_lib.modified_suffix"));
+        char rules[64];
+        std::snprintf(rules, sizeof(rules), tr("affix_lib.lines_fmt"),
+                      countLines(content));
+        ImGui::TextDisabled("%s", rules);
     }
 
-    // --- Row 2: action buttons ------------------------------------------
+    // --- Row 2: action buttons -------------------------------------------
+    // Edit  → open the bound .txt with the system default text editor
+    // Reload → force re-read from disk (manual nudge if file watcher missed)
+    // Folder → reveal the affix_libraries directory in Explorer; user does
+    //          new / rename / delete / copy via the file system (everyone
+    //          who runs a Bot is comfortable with that, and the app doesn't
+    //          need to grow its own file manager).
     ImGui::BeginDisabled(!dirUsable);
 
-    if (ImGui::Button(tr("affix_lib.new"))) {
-        openModal("##AffixLibNew");
-    }
-    ImGui::SameLine();
-
     ImGui::BeginDisabled(selected.empty());
-    if (ImGui::Button(tr("affix_lib.save"))) {
-        // Overwrite the currently-bound library with the textbox content.
-        // Nothing to prompt — user explicitly asked, and they can recover
-        // by re-picking from the combo if they made a mistake (the dropdown
-        // still reflects on-disk state after save).
-        if (al::saveAffixLibrary(dir, selected, content)) {
-            spdlog::info("affix_lib: saved '{}' ({} bytes)", selected, content.size());
-        }
+    if (ImGui::Button(tr("affix_lib.edit"))) {
+        const auto path = dir / (selected + ".txt");
+        shellOpen(path.string().c_str());
     }
     ImGui::SameLine();
-    if (ImGui::Button(tr("affix_lib.rename"))) {
-        openModal("##AffixLibRename");
-    }
-    ImGui::SameLine();
-    if (ImGui::Button(tr("affix_lib.delete"))) {
-        openModal("##AffixLibDelete");
+    if (ImGui::Button(tr("affix_lib.reload"))) {
+        content = al::loadAffixLibrary(dir, selected);
+        changed = true;
+        spdlog::info("affix_lib: '{}' manually reloaded ({} bytes)",
+                     selected, content.size());
     }
     ImGui::EndDisabled();  // selected.empty()
+
+    ImGui::SameLine();
+    if (ImGui::Button(tr("affix_lib.folder"))) {
+        // ensureAffixLibraryDir is cheap and idempotent — guarantees the
+        // user gets a real folder even if onActiveProfileChanged hasn't
+        // run yet for this scope.
+        al::ensureAffixLibraryDir(dir);
+        shellOpen(dir.string().c_str());
+    }
 
     ImGui::EndDisabled();  // !dirUsable
 
@@ -238,47 +209,6 @@ void affixLibraryWidget(const std::filesystem::path& dir,
     ImGui::TextDisabled("%s", tr("affix_lib.poere_prefix"));
     ImGui::SameLine(0.0f, 4.0f);
     renderLink(kPoeReURL, kPoeReURL);
-
-    // --- Modals ----------------------------------------------------------
-    {
-        std::string nameOut;
-        if (modalNamePrompt("##AffixLibNew",
-                            tr("affix_lib.prompt_new"),
-                            "",
-                            &nameOut)) {
-            if (al::saveAffixLibrary(dir, nameOut, content)) {
-                selected = nameOut;
-                changed  = true;
-                spdlog::info("affix_lib: created '{}'", nameOut);
-            }
-        }
-    }
-    {
-        std::string nameOut;
-        if (modalNamePrompt("##AffixLibRename",
-                            tr("affix_lib.prompt_rename"),
-                            selected.c_str(),
-                            &nameOut)) {
-            if (nameOut != selected &&
-                al::renameAffixLibrary(dir, selected, nameOut)) {
-                spdlog::info("affix_lib: renamed '{}' -> '{}'", selected, nameOut);
-                selected = nameOut;
-                changed  = true;
-            }
-        }
-    }
-    {
-        char msg[256];
-        std::snprintf(msg, sizeof(msg), tr("affix_lib.confirm_delete_fmt"),
-                      selected.c_str());
-        if (modalConfirm("##AffixLibDelete", msg)) {
-            if (al::deleteAffixLibrary(dir, selected)) {
-                spdlog::info("affix_lib: deleted '{}'", selected);
-                selected.clear();
-                changed = true;
-            }
-        }
-    }
 
     ImGui::PopID();
     if (outChanged) *outChanged = changed;

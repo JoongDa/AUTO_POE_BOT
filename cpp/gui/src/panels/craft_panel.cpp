@@ -15,10 +15,6 @@
 
 namespace poebot::gui::panels {
 
-namespace {
-constexpr size_t kAffixBufCap = 4096;
-}
-
 void CraftPanel::render(PanelContext& ctx) {
     using poebot::i18n::tr;
     if (!ctx.settings || !ctx.settings->active()) {
@@ -42,21 +38,12 @@ void CraftPanel::render(PanelContext& ctx) {
     if (ImGui::IsItemDeactivatedAfterEdit()) dirty = true;
     ImGui::EndDisabled();
 
-    char buf[kAffixBufCap];
-    std::snprintf(buf, sizeof(buf), "%s", c.affixes.c_str());
-    // Use CalcItemWidth() so the text frame ends at the same x as the sliders
-    // above (which also use CalcItemWidth internally), instead of -FLT_MIN
-    // which would push the label off-screen.
-    if (ImGui::InputTextMultiline(tr("craft.affixes_label"),
-                                  buf, sizeof(buf),
-                                  ImVec2(ImGui::CalcItemWidth(), 120))) {
-        c.affixes = buf;
-        dirty = true;
-    }
-
-    // Library picker (dropdown + Save/New/Rename/Delete + poe.re link).
+    // Affixes: the inline textbox is gone — editing now happens in the
+    // user's external editor (notepad / VSCode / …) on the .txt file
+    // itself. The widget here only binds + previews the library; rules
+    // are parsed from `c.affixes` at task-start time, same as before.
     // Craft and Map keep separate library pools (item mods vs map mods)
-    // under sibling subfolders of the root.
+    // under sibling subfolders of the active profile's affix root.
     {
         bool libChanged = false;
         const std::filesystem::path dir = ctx.affixLibraryDir

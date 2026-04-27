@@ -1,7 +1,6 @@
 #include <poebot/gui/panels/config_panel.hpp>
 
 #include <poebot/config/profile.hpp>
-#include <poebot/config/settings_io.hpp>
 #include <poebot/coords.hpp>
 #include <poebot/gui/capture_service.hpp>
 #include <poebot/i18n/i18n.hpp>
@@ -67,8 +66,6 @@ void ConfigPanel::render(PanelContext& ctx) {
 
     ImGui::Text(tr("config.active_profile_fmt"),
                 prof->displayName.c_str(), prof->name.c_str());
-    ImGui::TextDisabled(tr("config.window_match_fmt"), prof->windowTitlePattern.c_str());
-    ImGui::TextDisabled("%s", tr("config.tip_capture"));
     ImGui::Separator();
     ImGui::Spacing();
 
@@ -93,31 +90,45 @@ void ConfigPanel::render(PanelContext& ctx) {
     coordRow("invP01",   "Alt+5", c.invP01,  ctx);
     coordRow("invP10",   "Alt+6", c.invP10,  ctx);
 
-    // --- Save / Reset -----------------------------------------------------
+    // --- Reset ------------------------------------------------------------
+    // Save is gone: settings auto-persist on dirty (App::saveSettingsIfDirty
+    // throttles writes ~every 800ms) and on exit, so an explicit Save button
+    // duplicates work the user can't tell apart. Reset stays but now requires
+    // a confirm step — it wipes coords + craft + map + deposit + stats in one
+    // shot and there's no undo.
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
 
-    if (ImGui::Button(tr("config.button.save"))) {
-        if (ctx.settingsRoot) {
-            if (poebot::config::saveLayout(*ctx.settings, *ctx.settingsRoot)) {
-                ctx.dirty = false;
-                spdlog::info("config: settings saved to {}", ctx.settingsRoot->string());
-            }
-        }
+    if (ImGui::Button(tr("config.button.reset_profile"))) {
+        ImGui::OpenPopup("##ResetConfirm");
     }
 
-    ImGui::SameLine();
-    if (ImGui::Button(tr("config.button.reset_profile"))) {
-        if (ctx.capture) ctx.capture->cancel();
-        auto def = poebot::config::defaultProfileFor(prof->name);
-        prof->coords  = def.coords;
-        prof->craft   = def.craft;
-        prof->map     = def.map;
-        prof->deposit = def.deposit;
-        prof->stats   = def.stats;
-        ctx.dirty = true;
-        spdlog::info("config: profile '{}' reset to defaults", prof->name);
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
+                            ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (ImGui::BeginPopupModal("##ResetConfirm", nullptr,
+                               ImGuiWindowFlags_AlwaysAutoResize |
+                               ImGuiWindowFlags_NoSavedSettings)) {
+        ImGui::TextUnformatted(tr("config.confirm_reset"));
+        ImGui::Spacing();
+        if (ImGui::Button(tr("common.ok"), ImVec2(90, 0))) {
+            if (ctx.capture) ctx.capture->cancel();
+            auto def = poebot::config::defaultProfileFor(prof->name);
+            prof->coords  = def.coords;
+            prof->craft   = def.craft;
+            prof->map     = def.map;
+            prof->deposit = def.deposit;
+            prof->stats   = def.stats;
+            ctx.dirty = true;
+            spdlog::info("config: profile '{}' reset to defaults", prof->name);
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button(tr("common.cancel"), ImVec2(90, 0)) ||
+            ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
     }
 }
 

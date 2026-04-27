@@ -47,8 +47,21 @@ bool MainWindow::create(HINSTANCE hInstance, const wchar_t* title, int width, in
         return false;
     }
 
+    // Overlay-style window flags, modeled on PoE Overlay (Electron's
+    // alwaysOnTop:'screen-saver' + focusable:false collapses to the same
+    // Win32 set):
+    //   WS_EX_TOPMOST     — pin above the game's borderless-fullscreen window
+    //   WS_EX_NOACTIVATE  — clicks don't steal focus, so the game never
+    //                       sees a foreground change and never minimizes
+    //   WS_EX_TOOLWINDOW  — keep the bot out of Alt+Tab and the taskbar; F9
+    //                       (registered later) is the only way to hide/show
+    // The matching WM_MOUSEACTIVATE handler (below) is required — without
+    // it Win32 still tries to activate the window on click and overrides
+    // WS_EX_NOACTIVATE for that one click.
+    constexpr DWORD kOverlayExStyle =
+        WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW;
     hwnd_ = ::CreateWindowExW(
-        0, className_, title, WS_OVERLAPPEDWINDOW,
+        kOverlayExStyle, className_, title, WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT, width, height,
         nullptr, nullptr, hInstance, this);
     if (!hwnd_) {
@@ -107,6 +120,15 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
                 onResize_(LOWORD(l), HIWORD(l));
             }
             return 0;
+        case WM_MOUSEACTIVATE:
+            // Refuse activation on click. WS_EX_NOACTIVATE on the window
+            // alone is not enough — when the user clicks the client area,
+            // Win32 sends WM_MOUSEACTIVATE first and DefWindowProc returns
+            // MA_ACTIVATE, briefly stealing focus from the game (which can
+            // pop a fullscreen-game out of its borderless state on some
+            // drivers). Returning MA_NOACTIVATE here closes that hole; the
+            // click itself is still delivered as WM_LBUTTONDOWN to ImGui.
+            return MA_NOACTIVATE;
         case WM_SYSCOMMAND:
             // Disable ALT-activated application menu (steals focus in-game).
             if ((w & 0xfff0) == SC_KEYMENU) return 0;
