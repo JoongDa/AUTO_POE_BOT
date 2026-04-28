@@ -146,12 +146,17 @@ void ConfigPanel::render(PanelContext& ctx) {
             }
 
             ImGui::Spacing();
+            // Reset only the actions this tab shows — the nine capture.*
+            // hotkeys are owned by the Coordinates tab now, so resetting
+            // them here would silently churn buttons the user can't even
+            // see. The same capture.* filter as the row loop above.
             if (ImGui::SmallButton(tr("settings.hotkeys.reset_all"))) {
                 if (ctx.onRebindHotkey) {
                     for (const auto& a : poebot::hotkey::allHotkeyActions()) {
+                        if (std::string_view(a.id).rfind("capture.", 0) == 0) continue;
                         ctx.onRebindHotkey(a.id, a.defaultBinding);
                     }
-                    spdlog::info("hotkeys: reset all to defaults");
+                    spdlog::info("hotkeys: reset task/overlay hotkeys to defaults");
                 }
             }
 
@@ -311,8 +316,23 @@ void ConfigPanel::render(PanelContext& ctx) {
             prof->map     = def.map;
             prof->deposit = def.deposit;
             prof->stats   = def.stats;
+            // The capture.* hotkey buttons live on this tab too — restore
+            // them to defaults along with the coord rows so "reset" really
+            // means "everything on this view, gone". App.rebindHotkey early-
+            // exits no-ops, so combos already at default cost nothing.
+            // (Hotkeys are global in app.json, so this also resets the
+            // bindings used by the *other* profile — acceptable since both
+            // profiles share the same physical keyboard anyway.)
+            if (ctx.onRebindHotkey) {
+                for (const auto& a : poebot::hotkey::allHotkeyActions()) {
+                    if (std::string_view(a.id).rfind("capture.", 0) == 0) {
+                        ctx.onRebindHotkey(a.id, a.defaultBinding);
+                    }
+                }
+            }
             ctx.dirty = true;
-            spdlog::info("config: profile '{}' reset to defaults", prof->name);
+            spdlog::info("config: profile '{}' reset to defaults (incl. capture hotkeys)",
+                         prof->name);
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();

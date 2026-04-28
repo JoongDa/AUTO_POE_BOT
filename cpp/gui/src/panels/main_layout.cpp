@@ -127,12 +127,10 @@ void renderAppearanceFab(PanelContext& ctx) {
     const bool clicked = ImGui::IsItemClicked();
 
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    const ImU32 textCol = ImGui::GetColorU32(ImGuiCol_Text);
 
-    // Hover wash — a rounded rectangle behind the glyph, matching the
-    // project's FrameRounding so it reads as a toolbar button rather
-    // than a floating circular highlight. Only drawn on hover; clears
-    // the moment the cursor leaves.
+    // Hover wash — gray rounded rect behind the glyph, only while the
+    // cursor is over the FAB. Idle state has no chip; the two pills
+    // float on the sidebar background.
     if (hovered) {
         const ImVec2 bgMax(cursor.x + kBtnSize, cursor.y + kBtnSize);
         dl->AddRectFilled(cursor, bgMax,
@@ -140,27 +138,53 @@ void renderAppearanceFab(PanelContext& ctx) {
                           ImGui::GetStyle().FrameRounding);
     }
 
-    // Appearance glyph: a horizontal capsule (pill) outline with a small
-    // filled dot — drawn like a physical toggle. The dot position tracks
-    // the current theme (light = left / off, dark = right / on) so the
-    // icon's resting state matches reality instead of always reading as
-    // "on". Draws with the current text color so it auto-inverts between
-    // Light and Dark themes.
-    const float pillW = kBtnSize * 0.70f;   // capsule width
-    const float pillH = kBtnSize * 0.40f;   // capsule height
+    // Two stacked toggle-pill glyphs — top tracks Appearance, bottom
+    // tracks Language. Both pills are pure ImDrawList primitives so the
+    // glyph survives the merged Segoe UI + YaHei atlas (which only loads
+    // the ChineseSimplifiedCommon range and would render any Geometric
+    // Shapes codepoint as a missing-glyph box).
+    //
+    // Drawing two pills instead of one signals "multiple toggles live
+    // here" — matches the popup contents (Appearance + Language) and
+    // gives the user at-a-glance feedback about both states without
+    // having to open the menu.
+    // Each pill is the original single-pill design (W=0.70, H=0.40 of
+    // kBtnSize) scaled uniformly by 0.5 — same aspect ratio (1.75:1),
+    // half the dimensions — so two of them stack into roughly the
+    // visual footprint the single pill used to occupy.
+    const float pillW = kBtnSize * 0.35f;   // capsule width  (half of 0.70)
+    const float pillH = kBtnSize * 0.20f;   // capsule height (half of 0.40)
     const float pillR = pillH * 0.5f;       // full-pill rounding
+    const float gapY  = 2.0f;                // vertical gap between pills
 
-    const ImVec2 a(center.x - pillW * 0.5f, center.y - pillH * 0.5f);
-    const ImVec2 b(center.x + pillW * 0.5f, center.y + pillH * 0.5f);
-    dl->AddRect(a, b, textCol, pillR, 0, 1.4f);
+    const float topY    = center.y - pillH - gapY * 0.5f;
+    const float bottomY = center.y          + gapY * 0.5f;
 
-    // Dot on the left for Light mode (default), on the right for Dark.
-    // Computed once and reused by the popup below so the toggle glyph and
-    // the menu-item checkmarks can't drift out of sync.
     const bool light = ctx.settings->appearance == "light";
     const bool dark  = ctx.settings->appearance == "dark";
-    const ImVec2 dotCenter(dark ? b.x - pillR : a.x + pillR, center.y);
-    dl->AddCircleFilled(dotCenter, pillR * 0.62f, textCol);
+    const bool zh    = ctx.settings->language == "zh";
+    const bool en    = ctx.settings->language == "en";
+
+    // Outline capsule + outline thumb circle, both in TextDisabled gray
+    // so the icon reads as quiet UI furniture rather than competing with
+    // primary text. The thumb circle's radius = pillR, so its outer edge
+    // sits flush with the capsule's rounded end on whichever side the
+    // current state points to.
+    const ImU32 pillCol = ImGui::GetColorU32(ImGuiCol_TextDisabled);
+    auto drawPill = [&](float yTop, bool dotOnRight) {
+        const ImVec2 a(center.x - pillW * 0.5f, yTop);
+        const ImVec2 b(center.x + pillW * 0.5f, yTop + pillH);
+        dl->AddRect(a, b, pillCol, pillR, 0, 1.0f);
+        const ImVec2 dot(dotOnRight ? b.x - pillR : a.x + pillR,
+                         yTop + pillH * 0.5f);
+        dl->AddCircle(dot, pillR, pillCol, 0, 1.0f);
+    };
+
+    // Top: Appearance — Light = left dot (default), Dark = right dot.
+    // Bottom: Language — convention follows the popup's menu order
+    // (中文 listed first → left dot for zh, right dot for en).
+    drawPill(topY,    /*dotOnRight=*/dark);
+    drawPill(bottomY, /*dotOnRight=*/en);
 
     if (clicked) ImGui::OpenPopup("##AppearancePopup");
 
@@ -193,8 +217,7 @@ void renderAppearanceFab(PanelContext& ctx) {
         ImGui::TextDisabled("%s", tr("menu.language"));
         ImGui::Separator();
 
-        const bool zh = ctx.settings->language == "zh";
-        const bool en = ctx.settings->language == "en";
+        // zh/en already computed above (used by the bottom toggle pill).
         if (ImGui::MenuItem(tr("menu.language.zh"), nullptr, zh)) {
             if (!zh) {
                 ctx.settings->language = "zh";

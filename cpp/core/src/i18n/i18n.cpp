@@ -70,7 +70,7 @@ const Table& enTable() {
         {"config.section.inventory",       "Inventory deposit anchors"},
         {"config.unset",                   "(unset)"},
         {"config.button.reset_profile",    "Reset profile to defaults"},
-        {"config.confirm_reset",           "Reset this profile to defaults?\nAll coords, craft / map / deposit settings and stats will be cleared."},
+        {"config.confirm_reset",           "Reset this profile to defaults?\nAll coords, craft / map / deposit settings, stats, and capture hotkeys will be reset."},
 
         // Settings tabs (top of the panel — Hotkeys is global, Coords is
         // per-profile).
@@ -194,7 +194,7 @@ const Table& zhTable() {
         {"config.section.inventory",       "背包入库锚点"},
         {"config.unset",                   "(未设)"},
         {"config.button.reset_profile",    "重置为默认值"},
-        {"config.confirm_reset",           "确认将该配置档重置为默认值？\n所有坐标、改造 / 地图 / 入库设置以及统计都会被清空。"},
+        {"config.confirm_reset",           "确认将该配置档重置为默认值？\n所有坐标、改造 / 地图 / 入库设置、统计以及捕获热键都会回到默认。"},
 
         // 设置面板顶部分页
         {"settings.tab.hotkeys",                      "热键"},

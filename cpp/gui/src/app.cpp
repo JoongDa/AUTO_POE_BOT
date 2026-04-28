@@ -165,12 +165,23 @@ void App::initLogging() {
 
         logSink_ = std::make_shared<poebot::log::ImGuiSink>(1000);
         logSink_->set_level(spdlog::level::trace);
+        // Compact GUI pattern: drop the absolute date, ms, logger name, and
+        // level token (color in the log panel already conveys severity).
+        // The right strip is only ~360 px wide; the default spdlog format
+        // ate ~45 chars before the actual message. File and MSVC sinks
+        // keep the default verbose format for forensic value — see below.
+        logSink_->set_pattern("%H:%M:%S  %v");
 
         // Publish the GUI sink as the "active" one so task code can push
         // structured entries (highlighted hit text) via poebot::log::push
         // without threading a sink pointer through every call site.
         poebot::log::setActiveSink(logSink_.get());
 
+        // Verbose pattern for the on-disk log (and MSVC debug output) — kept
+        // as spdlog's default `[YYYY-MM-DD HH:MM:SS.mmm] [name] [level] msg`
+        // by leaving these sinks' patterns untouched. set_pattern() on the
+        // logger would override every sink, which would lose the GUI's
+        // compact format above; setting per-sink keeps them independent.
         std::vector<spdlog::sink_ptr> sinks{msvc_sink, file_sink, logSink_};
         auto logger = std::make_shared<spdlog::logger>("poe-bot", sinks.begin(), sinks.end());
         logger->set_level(spdlog::level::info);
@@ -444,6 +455,13 @@ bool App::rebindHotkey(const std::string& id,
     const auto oldConflict = conflictingId.empty()
                               ? poebot::hotkey::HotkeyBinding{}
                               : currentBinding(conflictingId);
+
+    // No-op fast path: same combo as before. Skip the unreg/reregister
+    // dance (and the log line) so bulk "reset all" passes don't fire 14
+    // identical rebind events when nothing actually moved.
+    if (oldId == newBinding && conflictingId.empty()) {
+        return true;
+    }
 
     auto unreg = [&](const std::string& a) {
         if (auto it = hotkeyIds_.find(a); it != hotkeyIds_.end()) {
