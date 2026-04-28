@@ -1,12 +1,11 @@
 #include <poebot/gui/panels/deposit_panel.hpp>
 
 #include <poebot/i18n/i18n.hpp>
-#include <poebot/task/deposit_task.hpp>
 #include <poebot/task/task_runner.hpp>
-#include <poebot/win/window.hpp>
 
 #include <imgui.h>
-#include <spdlog/spdlog.h>
+
+#include <string>
 
 namespace poebot::gui::panels {
 
@@ -29,47 +28,38 @@ void DepositPanel::render(PanelContext& ctx) {
 
     ImGui::Spacing();
 
-    // Task controls
+    // Task display. Start / Stop are hotkey-only (default F3 / End); the
+    // footer below shows the live bindings.
     auto* runner = ctx.taskRunner;
     if (runner) {
         using poebot::task::RunnerState;
         const auto state = runner->state();
 
-        if (state == RunnerState::Idle) {
-            if (ImGui::Button(tr("deposit.start"))) {
-                auto* prof = ctx.settings->active();
-                if (!prof) {
-                    spdlog::warn("deposit: no active profile");
-                } else if (!ctx.gameWindow || !ctx.gameWindow->valid()) {
-                    spdlog::warn("deposit: game window not found — launch POE first");
-                } else {
-                    poebot::task::DepositTask::Params p;
-                    p.gameWindow = ctx.gameWindow;
-                    p.deposit    = prof->deposit;
-                    p.coords     = prof->coords;
-                    runner->start(std::make_unique<poebot::task::DepositTask>(std::move(p)));
-                }
-            }
-        } else if (state == RunnerState::Running || state == RunnerState::Stopping) {
+        if (state == RunnerState::Running || state == RunnerState::Stopping) {
             auto prog = runner->progress();
             ImGui::Text(tr("deposit.progress_fmt"), prog.currentItem, prog.totalItems);
             ImGui::ProgressBar(
                 prog.totalItems > 0
                     ? static_cast<float>(prog.currentItem) / static_cast<float>(prog.totalItems)
                     : 0.0f);
-
-            if (state == RunnerState::Running) {
-                if (ImGui::Button(tr("common.stop"))) runner->requestStop();
-            } else {
-                ImGui::BeginDisabled(true);
-                ImGui::Button(tr("common.stopping"));
-                ImGui::EndDisabled();
+            if (state == RunnerState::Stopping) {
+                ImGui::TextDisabled("%s", tr("common.stopping"));
             }
-        } else {
-            // Finished — App loop will auto-join.
+        } else if (state == RunnerState::Finished) {
+            // App loop auto-joins; until that happens the panel just
+            // shows the "deposit finished" line.
             ImGui::TextUnformatted(tr("deposit.finished"));
         }
+        // Idle state: nothing extra — slider rows + the hint footer below
+        // are enough; no Start button.
     }
+
+    // Hotkey hint footer — always visible (defaults: F3 to start, End to stop).
+    ImGui::Spacing();
+    const std::string startBind = poebot::gui::hotkeyLabel(ctx, "task.start.deposit");
+    const std::string stopBind  = poebot::gui::hotkeyLabel(ctx, "task.stop");
+    ImGui::TextDisabled(tr("task.hotkey_hint_fmt"),
+                        startBind.c_str(), stopBind.c_str());
 
     if (dirty) ctx.dirty = true;
 }

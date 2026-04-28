@@ -10,6 +10,9 @@
 #include <poebot/config/affix_library.hpp>
 #include <poebot/config/settings_io.hpp>
 #include <poebot/i18n/i18n.hpp>
+#include <poebot/task/craft_task.hpp>
+#include <poebot/task/deposit_task.hpp>
+#include <poebot/task/map_task.hpp>
 #include <poebot/version.hpp>
 
 #include <imgui.h>
@@ -279,9 +282,75 @@ void App::toggleOverlay() {
     spdlog::info("hotkey: overlay {}", windowVisible_ ? "shown" : "hidden");
 }
 
+// Shared preflight for all three task starts. Logs the failure reason and
+// returns false if anything's missing (no active profile / runner busy /
+// no game window). Returning here keeps the per-task helpers below short
+// and consistent.
+namespace {
+bool taskStartPreflight(const char* label,
+                        const poebot::config::GameProfile* prof,
+                        poebot::task::RunnerState runnerState,
+                        const poebot::win::GameWindow* gw) {
+    if (!prof) {
+        spdlog::warn("{}: no active profile", label);
+        return false;
+    }
+    if (runnerState != poebot::task::RunnerState::Idle) {
+        spdlog::warn("{}: another task is running — press End to stop it first", label);
+        return false;
+    }
+    if (!gw || !gw->valid()) {
+        spdlog::warn("{}: game window not found — launch POE first", label);
+        return false;
+    }
+    return true;
+}
+}  // namespace
+
+void App::tryStartCraft() {
+    auto* prof = settings_.active();
+    if (!taskStartPreflight("craft", prof, taskRunner_.state(), &gameWindow_)) return;
+    if (prof->craft.affixes.empty()) {
+        spdlog::warn("craft: affix pattern is empty — bind a library first");
+        return;
+    }
+    poebot::task::CraftTask::Params p;
+    p.gameWindow = &gameWindow_;
+    p.craft      = prof->craft;
+    p.coords     = prof->coords;
+    taskRunner_.start(std::make_unique<poebot::task::CraftTask>(std::move(p)));
+}
+
+void App::tryStartMap() {
+    auto* prof = settings_.active();
+    if (!taskStartPreflight("map", prof, taskRunner_.state(), &gameWindow_)) return;
+    if (prof->map.affixes.empty()) {
+        spdlog::warn("map: affix pattern is empty — bind a library first");
+        return;
+    }
+    poebot::task::MapTask::Params p;
+    p.gameWindow = &gameWindow_;
+    p.map        = prof->map;
+    p.coords     = prof->coords;
+    taskRunner_.start(std::make_unique<poebot::task::MapTask>(std::move(p)));
+}
+
+void App::tryStartDeposit() {
+    auto* prof = settings_.active();
+    if (!taskStartPreflight("deposit", prof, taskRunner_.state(), &gameWindow_)) return;
+    poebot::task::DepositTask::Params p;
+    p.gameWindow = &gameWindow_;
+    p.deposit    = prof->deposit;
+    p.coords     = prof->coords;
+    taskRunner_.start(std::make_unique<poebot::task::DepositTask>(std::move(p)));
+}
+
 poebot::hotkey::HotkeyManager::Callback App::makeCallbackFor(const std::string& id) {
-    if (id == "task.stop")      return [this]() { triggerStop(); };
-    if (id == "overlay.toggle") return [this]() { toggleOverlay(); };
+    if (id == "task.start.craft")   return [this]() { tryStartCraft(); };
+    if (id == "task.start.map")     return [this]() { tryStartMap(); };
+    if (id == "task.start.deposit") return [this]() { tryStartDeposit(); };
+    if (id == "task.stop")          return [this]() { triggerStop(); };
+    if (id == "overlay.toggle")     return [this]() { toggleOverlay(); };
     // capture.* actions: the suffix matches the coord field name (orb1,
     // baseItem, invP10, …). Capturing it by value keeps the lambda
     // self-sufficient even if the registry array shifts later.
@@ -347,74 +416,103 @@ bool App::rebindHotkey(const std::string& id,
                        poebot::hotkey::HotkeyBinding newBinding) {
     using Mod = poebot::hotkey::Mod;
 
-    // Reject up-front if another action in our own map already owns this
-    // combo. Comparing valid() filters out the "unbind everyone" case
-    // (modifiers=0, vk=0) which is allowed and never conflicts.
+    // In-app conflict detection. If another action already owns the new
+    // combo, we *swap* with it: that action gets `id`'s previous binding.
+    // The alternative ("reject on conflict") forces the user to unbind a
+    // donor key first, which made remapping Alt+1 → Alt+5 needlessly
+    // multi-step. Soft fallback when our old binding is empty: the
+    // conflicting action becomes unbound (a "steal" rather than a swap).
+    std::string conflictingId;
     if (newBinding.valid()) {
         for (const auto& [otherId, otherBinding] : settings_.hotkeys) {
             if (otherId == id) continue;
             if (otherBinding == newBinding) {
-                spdlog::warn("rebind '{}' -> {}: already bound to '{}'",
-                             id, newBinding.format(), otherId);
-                return false;
+                conflictingId = otherId;
+                break;
             }
         }
     }
 
-    // Snapshot the previous binding so we can roll back on failure.
-    const auto oldBindingIt = settings_.hotkeys.find(id);
-    const poebot::hotkey::HotkeyBinding oldBinding =
-        (oldBindingIt != settings_.hotkeys.end())
-        ? oldBindingIt->second
-        : poebot::hotkey::defaultBindingFor(id);
+    // Snapshot — needed both for the swap target and for rollback if the
+    // OS rejects the new combo (some other app owns it).
+    auto currentBinding = [&](const std::string& a) {
+        auto it = settings_.hotkeys.find(a);
+        return (it != settings_.hotkeys.end()) ? it->second
+                                                : poebot::hotkey::defaultBindingFor(a);
+    };
+    const auto oldId       = currentBinding(id);
+    const auto oldConflict = conflictingId.empty()
+                              ? poebot::hotkey::HotkeyBinding{}
+                              : currentBinding(conflictingId);
 
-    // Drop the existing OS-level registration. Doing this BEFORE the new
-    // register attempt avoids a race where new and old briefly co-exist
-    // on the same combo (RegisterHotKey would fail in that window).
-    if (auto it = hotkeyIds_.find(id); it != hotkeyIds_.end()) {
-        hotkeyMgr_.unregisterHotkey(it->second);
-        hotkeyIds_.erase(it);
-    }
-
-    if (newBinding.valid()) {
-        auto cb = makeCallbackFor(id);
-        if (!cb) {
-            spdlog::warn("rebind '{}': no callback factory", id);
-            return false;
+    auto unreg = [&](const std::string& a) {
+        if (auto it = hotkeyIds_.find(a); it != hotkeyIds_.end()) {
+            hotkeyMgr_.unregisterHotkey(it->second);
+            hotkeyIds_.erase(it);
         }
-        const UINT mods = newBinding.modifiers | static_cast<UINT>(Mod::NoRepeat);
+    };
+
+    // Apply a (possibly empty) binding to one action. Updates settings on
+    // success and on the empty-binding path; returns false only when an
+    // OS-level register attempt fails. Settings stay untouched on failure
+    // so callers can decide to rollback.
+    auto applyBinding = [&](const std::string& actionId,
+                            poebot::hotkey::HotkeyBinding b) -> bool {
+        if (!b.valid()) {
+            settings_.hotkeys[actionId] = b;
+            return true;
+        }
+        auto cb = makeCallbackFor(actionId);
+        if (!cb) return false;
+        const UINT mods = b.modifiers | static_cast<UINT>(Mod::NoRepeat);
         int hkid = 0;
         try {
-            hkid = hotkeyMgr_.registerHotkey(static_cast<Mod>(mods), newBinding.vk, std::move(cb));
-        } catch (const std::exception& e) {
-            spdlog::error("rebind '{}' threw: {}", id, e.what());
-        }
-        if (!hkid) {
-            // Rollback: re-register the old binding so the user isn't left
-            // with a silently broken action. Best-effort — if even the old
-            // one can't be put back, log and move on.
-            if (oldBinding.valid()) {
-                if (auto oldCb = makeCallbackFor(id)) {
-                    const UINT oldMods = oldBinding.modifiers | static_cast<UINT>(Mod::NoRepeat);
-                    int rb = 0;
-                    try {
-                        rb = hotkeyMgr_.registerHotkey(static_cast<Mod>(oldMods),
-                                                       oldBinding.vk, std::move(oldCb));
-                    } catch (...) {}
-                    if (rb) hotkeyIds_[id] = rb;
-                }
-            }
-            spdlog::warn("rebind '{}' -> {}: combo unavailable", id, newBinding.format());
-            return false;
-        }
-        hotkeyIds_[id] = hkid;
-    }
-    // newBinding empty == "unbind". Old already dropped above; nothing else.
+            hkid = hotkeyMgr_.registerHotkey(static_cast<Mod>(mods), b.vk, std::move(cb));
+        } catch (...) { hkid = 0; }
+        if (!hkid) return false;
+        hotkeyIds_[actionId] = hkid;
+        settings_.hotkeys[actionId] = b;
+        return true;
+    };
 
-    settings_.hotkeys[id] = newBinding;
+    // Drop both OS registrations up front. Doing this before any apply
+    // avoids RegisterHotKey reporting "in use" against ourselves during
+    // the swap (the OS doesn't distinguish own-vs-other).
+    unreg(id);
+    if (!conflictingId.empty()) unreg(conflictingId);
+
+    // Step 1 — give `id` the new binding.
+    if (!applyBinding(id, newBinding)) {
+        // System-wide conflict: another app owns the combo. Restore both
+        // actions to their previous state and report failure so the modal
+        // can surface "unavailable".
+        applyBinding(id, oldId);
+        if (!conflictingId.empty()) applyBinding(conflictingId, oldConflict);
+        spdlog::warn("rebind '{}' -> {}: combo unavailable system-wide",
+                     id, newBinding.format());
+        return false;
+    }
+
+    // Step 2 — if we displaced another action, hand it our old binding.
+    if (!conflictingId.empty()) {
+        if (!applyBinding(conflictingId, oldId)) {
+            // Edge case: our old binding can't be re-registered for the
+            // donor (extremely rare since it was working a moment ago).
+            // Leave the donor unbound rather than spin and warn loudly.
+            settings_.hotkeys[conflictingId] = poebot::hotkey::HotkeyBinding{};
+            spdlog::warn("rebind '{}' swap: re-register of '{}' with {} "
+                         "failed; left unbound",
+                         id, conflictingId, oldId.format());
+        }
+        spdlog::info("rebind '{}' <-> '{}': swapped to {} / {}",
+                     id, conflictingId,
+                     newBinding.format(), oldId.format());
+    } else {
+        spdlog::info("rebind '{}': {} -> {}",
+                     id, oldId.format(), newBinding.format());
+    }
+
     panelCtx_.dirty = true;
-    spdlog::info("rebind '{}': {} -> {}", id,
-                 oldBinding.format(), newBinding.format());
     return true;
 }
 

@@ -69,6 +69,15 @@ private:
     void triggerStop();
     void toggleOverlay();
 
+    // Hotkey-driven task starts. Each one mirrors what the old per-panel
+    // Start button used to do: validate (game window present, affixes
+    // non-empty for craft / map), build the task params from settings +
+    // owned state, and hand off to TaskRunner. Returns silently after
+    // logging if validation fails — UI is informational only.
+    void tryStartCraft();
+    void tryStartMap();
+    void tryStartDeposit();
+
     poebot::hotkey::HotkeyManager::Callback makeCallbackFor(const std::string& id);
 
     void renderFrame();

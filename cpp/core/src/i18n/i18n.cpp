@@ -87,6 +87,9 @@ const Table& enTable() {
         {"settings.hotkeys.rebind_err_conflict_fmt",  "%s is already bound to: %s"},
         {"settings.hotkeys.rebind_err_unavailable_fmt","%s is unavailable — another app may own it"},
 
+        {"hotkey.action.task.start.craft",   "Start craft"},
+        {"hotkey.action.task.start.map",     "Start map roll"},
+        {"hotkey.action.task.start.deposit", "Start deposit"},
         {"hotkey.action.task.stop",          "Stop task"},
         {"hotkey.action.overlay.toggle",     "Toggle overlay"},
         {"hotkey.action.capture.orb1",       "Capture orb1"},
@@ -99,17 +102,17 @@ const Table& enTable() {
         {"hotkey.action.capture.invP01",     "Capture inv p01"},
         {"hotkey.action.capture.invP10",     "Capture inv p10"},
 
-        // Craft panel — affix textbox is gone; rules now live in the bound
-        // .txt file (see affix_lib.* keys).
+        // Craft panel — affix textbox is gone (rules now live in the bound
+        // .txt) and so are Start / Stop buttons (those are hotkey-only via
+        // task.start.craft / task.stop now).
         {"craft.batch_mode",               "Batch mode"},
         {"craft.columns",                  "Columns"},
         {"craft.rows",                     "Rows"},
         {"craft.stats_fmt",                "Stats  ops=%d  hits=%d"},
         {"craft.reset_stats",              "Reset stats"},
-        {"craft.start",                    "Start craft"},
         {"craft.progress_fmt",             "Crafting: item %d / %d  |  ops=%d  hits=%d"},
 
-        // Map panel — affix textbox gone, same reason as Craft.
+        // Map panel — same shape as Craft; Start / Stop are hotkeys.
         {"map.mode.alch_scour",            "Alch + Scour"},
         {"map.mode.chaos",                 "Chaos"},
         {"map.batch_mode",                 "Batch mode"},
@@ -117,16 +120,20 @@ const Table& enTable() {
         {"map.rows",                       "Rows"},
         {"map.stats_fmt",                  "Stats  ops=%d  hits=%d"},
         {"map.reset_stats",                "Reset stats"},
-        {"map.start",                      "Start map roll"},
         {"map.progress_fmt",               "Rolling: map %d / %d  |  ops=%d  hits=%d"},
 
-        // Deposit panel
+        // Deposit panel — Start / Stop are hotkeys (task.start.deposit /
+        // task.stop); the panel just shows config + progress.
         {"deposit.inv_columns",            "Inventory columns"},
         {"deposit.inv_rows",               "Inventory rows"},
         {"deposit.description_fmt",        "Scans the inventory grid (%d x %d) and Ctrl+left-clicks each occupied cell into the open stash tab."},
-        {"deposit.start",                  "Deposit now"},
         {"deposit.progress_fmt",           "Depositing: %d / %d cells"},
         {"deposit.finished",               "Deposit finished."},
+
+        // Hotkey hint shown at the bottom of every task panel. Two %s
+        // slots: start binding label, stop binding label. Read live so
+        // it tracks Settings rebinds in real time.
+        {"task.hotkey_hint_fmt",           "%s to start   ·   %s to stop"},
 
         // Log panel
         {"log.title",                      "Log"},
@@ -202,6 +209,9 @@ const Table& zhTable() {
         {"settings.hotkeys.rebind_err_conflict_fmt",  "%s 已绑定到：%s"},
         {"settings.hotkeys.rebind_err_unavailable_fmt","%s 当前不可用 — 可能被别的程序占用"},
 
+        {"hotkey.action.task.start.craft",   "开始改造"},
+        {"hotkey.action.task.start.map",     "开始洗图"},
+        {"hotkey.action.task.start.deposit", "开始入库"},
         {"hotkey.action.task.stop",          "停止任务"},
         {"hotkey.action.overlay.toggle",     "显示/隐藏叠加层"},
         {"hotkey.action.capture.orb1",       "捕获 orb1"},
@@ -214,13 +224,13 @@ const Table& zhTable() {
         {"hotkey.action.capture.invP01",     "捕获背包 p01 锚点"},
         {"hotkey.action.capture.invP10",     "捕获背包 p10 锚点"},
 
-        // 改造面板 — 词缀文本框已去掉；规则改为外部编辑器编辑 .txt。
+        // 改造面板 — 词缀文本框已去掉；开始 / 停止改为热键
+        // （task.start.craft / task.stop）。
         {"craft.batch_mode",               "批量模式"},
         {"craft.columns",                  "列数"},
         {"craft.rows",                     "行数"},
         {"craft.stats_fmt",                "统计  操作=%d  命中=%d"},
         {"craft.reset_stats",              "清空统计"},
-        {"craft.start",                    "开始改造"},
         {"craft.progress_fmt",             "改造中:  第 %d / %d 件  |  操作=%d  命中=%d"},
 
         // 地图面板 — 同上。
@@ -231,16 +241,17 @@ const Table& zhTable() {
         {"map.rows",                       "行数"},
         {"map.stats_fmt",                  "统计  操作=%d  命中=%d"},
         {"map.reset_stats",                "清空统计"},
-        {"map.start",                      "开始洗图"},
         {"map.progress_fmt",               "洗图中:  第 %d / %d 张  |  操作=%d  命中=%d"},
 
-        // 入库面板
+        // 入库面板 — 开始 / 停止改为热键。
         {"deposit.inv_columns",            "背包列数"},
         {"deposit.inv_rows",               "背包行数"},
         {"deposit.description_fmt",        "扫描背包（%d x %d 格），对每个占用的格子按 Ctrl+鼠标左键，转入已打开的仓库页。"},
-        {"deposit.start",                  "开始入库"},
         {"deposit.progress_fmt",           "入库中:  %d / %d 格"},
         {"deposit.finished",               "入库完成。"},
+
+        // 任务面板底部的热键提示。两个 %s：开始 / 停止当前绑定。
+        {"task.hotkey_hint_fmt",           "%s 开始   ·   %s 停止"},
 
         // 日志面板
         {"log.title",                      "日志"},

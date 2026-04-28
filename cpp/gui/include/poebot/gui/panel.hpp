@@ -68,6 +68,23 @@ struct PanelContext {
                        poebot::hotkey::HotkeyBinding newBinding)> onRebindHotkey;
 };
 
+// Resolve the live binding for `actionId` and return its format() string
+// ("Alt+1", "End", "Ctrl+Shift+D", …). Falls back to the action's default
+// when the live map doesn't contain the id (e.g. on a fresh profile that
+// just finished defaultHotkeys()-backfilling).
+//
+// Inline-defined here so every panel that wants to render a hotkey hint
+// or a binding label gets the same lookup without each file open-coding
+// its own copy.
+inline std::string hotkeyLabel(const PanelContext& ctx, const char* actionId) {
+    if (ctx.hotkeys) {
+        if (auto it = ctx.hotkeys->find(actionId); it != ctx.hotkeys->end()) {
+            return it->second.format();
+        }
+    }
+    return poebot::hotkey::defaultBindingFor(actionId).format();
+}
+
 // Abstract base for every UI panel. Keep render() cheap; it runs every frame.
 class Panel {
 public:

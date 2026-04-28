@@ -3,16 +3,14 @@
 #include <poebot/config/profile.hpp>
 #include <poebot/gui/affix_library_widget.hpp>
 #include <poebot/i18n/i18n.hpp>
-#include <poebot/task/map_task.hpp>
 #include <poebot/task/task_runner.hpp>
-#include <poebot/win/window.hpp>
 
 #include <imgui.h>
-#include <spdlog/spdlog.h>
 
-#include <cfloat>
 #include <cstdio>
 #include <filesystem>
+#include <string>
+#include <string_view>
 
 namespace poebot::gui::panels {
 
@@ -61,7 +59,8 @@ void MapPanel::render(PanelContext& ctx) {
 
     ImGui::Separator();
 
-    // Task controls
+    // Task display. Start / Stop are hotkey-only (default F2 / End); the
+    // footer below shows the live bindings.
     auto* runner = ctx.taskRunner;
     if (runner) {
         using poebot::task::RunnerState;
@@ -76,21 +75,6 @@ void MapPanel::render(PanelContext& ctx) {
                 prof->stats.mapHits = 0;
                 dirty = true;
             }
-            ImGui::Spacing();
-
-            if (ImGui::Button(tr("map.start"))) {
-                if (!ctx.gameWindow || !ctx.gameWindow->valid()) {
-                    spdlog::warn("map: game window not found — launch POE first");
-                } else if (m.affixes.empty()) {
-                    spdlog::warn("map: affix pattern is empty");
-                } else {
-                    poebot::task::MapTask::Params p;
-                    p.gameWindow = ctx.gameWindow;
-                    p.map        = m;
-                    p.coords     = prof->coords;
-                    runner->start(std::make_unique<poebot::task::MapTask>(std::move(p)));
-                }
-            }
         } else if (ours) {
             auto prog = runner->progress();
             ImGui::Text(tr("map.progress_fmt"),
@@ -99,18 +83,21 @@ void MapPanel::render(PanelContext& ctx) {
                 prog.totalItems > 0
                     ? static_cast<float>(prog.currentItem) / static_cast<float>(prog.totalItems)
                     : 0.0f);
-
-            if (state == RunnerState::Running) {
-                if (ImGui::Button(tr("common.stop"))) runner->requestStop();
-            } else {
-                ImGui::BeginDisabled(true);
-                ImGui::Button(tr("common.stopping"));
-                ImGui::EndDisabled();
+            if (state == RunnerState::Stopping) {
+                ImGui::TextDisabled("%s", tr("common.stopping"));
             }
         } else {
             ImGui::TextDisabled(tr("common.other_task_running_fmt"), runner->taskName());
         }
     }
+
+    // Hotkey hint footer — always visible so the user can see what they've
+    // got bound (defaults: F2 to start, End to stop).
+    ImGui::Spacing();
+    const std::string startBind = poebot::gui::hotkeyLabel(ctx, "task.start.map");
+    const std::string stopBind  = poebot::gui::hotkeyLabel(ctx, "task.stop");
+    ImGui::TextDisabled(tr("task.hotkey_hint_fmt"),
+                        startBind.c_str(), stopBind.c_str());
 
     if (dirty) ctx.dirty = true;
 }

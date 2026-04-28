@@ -60,7 +60,7 @@ struct HotkeyAction {
 // All actions the user can rebind. Stable order — the Settings panel renders
 // them top-to-bottom in this order. Adding a new action here is enough to
 // surface it everywhere (UI, defaults, registration, persistence).
-const std::array<HotkeyAction, 11>& allHotkeyActions() noexcept;
+const std::array<HotkeyAction, 14>& allHotkeyActions() noexcept;
 
 using HotkeyConfig = std::unordered_map<std::string, HotkeyBinding>;
 

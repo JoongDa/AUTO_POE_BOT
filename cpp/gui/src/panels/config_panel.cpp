@@ -9,6 +9,7 @@
 #include <spdlog/spdlog.h>
 
 #include <cstdio>
+#include <string_view>
 
 namespace poebot::gui::panels {
 
@@ -40,13 +41,22 @@ std::string bindingLabel(const PanelContext& ctx, const char* actionId) {
     return poebot::hotkey::defaultBindingFor(actionId).format();
 }
 
-// One coord row: field name, value, hotkey-trigger button. Click the button
-// to fire the capture flow without leaving the keyboard. The button label
-// reflects whatever the user has bound to capture.<name>, so it stays in
-// sync after a rebind.
-//
-// `name` is the stable coord field id (English, "orb1" / "baseItem" / …).
-void coordRow(const char* name, poebot::ClientPoint& p, PanelContext& ctx) {
+}  // namespace
+
+void ConfigPanel::requestRebind(const char* actionId) {
+    rebindingId_ = actionId;
+    rebindError_.clear();
+    capture_.start();
+}
+
+// One coord row: field name, captured value, and a button labeled with
+// the live binding for that coord's capture hotkey. Clicking the button
+// rebinds — capture itself only fires when the user presses the bound
+// hotkey in-game. The "armed" green tint lights up while a capture is
+// pending (3-second window after the hotkey press), giving visible
+// feedback that the hotkey was received.
+void ConfigPanel::coordRow(PanelContext& ctx, const char* name,
+                           poebot::ClientPoint& p) {
     using poebot::i18n::tr;
     ImGui::PushID(name);
     ImGui::AlignTextToFramePadding();
@@ -66,18 +76,18 @@ void coordRow(const char* name, poebot::ClientPoint& p, PanelContext& ctx) {
     }
     if (armed) ImGui::PopStyleColor();
 
+    // Compose "capture.<name>" once — used both for the displayed
+    // binding label and for the rebind target if the user clicks.
     char actionId[32];
     std::snprintf(actionId, sizeof(actionId), "capture.%s", name);
     const std::string label = bindingLabel(ctx, actionId);
 
     ImGui::SameLine(250.0f);
-    if (ImGui::SmallButton(label.c_str()) && ctx.capture) {
-        ctx.capture->startCapture(name);
+    if (ImGui::SmallButton(label.c_str())) {
+        requestRebind(actionId);
     }
     ImGui::PopID();
 }
-
-}  // namespace
 
 void ConfigPanel::render(PanelContext& ctx) {
     using poebot::i18n::tr;
@@ -111,20 +121,26 @@ void ConfigPanel::render(PanelContext& ctx) {
 
     if (ImGui::BeginTabBar("##SettingsTabs", ImGuiTabBarFlags_None)) {
         // ----- Tab 1: Hotkeys -------------------------------------------
+        // Only the global / non-capture actions live here — the nine
+        // capture.* rows used to be duplicated on this tab AND inline
+        // with each coord row in tab 2. Now they're shown only with
+        // their coord row, removing the redundancy. Tab 1 keeps the
+        // five actions that have no associated coord (start craft /
+        // map / deposit, stop, overlay).
         if (ImGui::BeginTabItem(tr("settings.tab.hotkeys"))) {
             ImGui::Spacing();
 
             for (const auto& a : poebot::hotkey::allHotkeyActions()) {
+                const std::string_view id{a.id};
+                if (id.rfind("capture.", 0) == 0) continue;  // shown in tab 2
+
                 ImGui::PushID(a.id);
                 ImGui::AlignTextToFramePadding();
                 ImGui::Text("%s", tr(a.labelKey));
                 ImGui::SameLine(220.0f);
                 const std::string label = bindingLabel(ctx, a.id);
                 if (ImGui::SmallButton(label.c_str())) {
-                    // Set state; the actual OpenPopup runs at panel scope.
-                    rebindingId_ = a.id;
-                    rebindError_.clear();
-                    capture_.start();
+                    requestRebind(a.id);
                 }
                 ImGui::PopID();
             }
@@ -143,6 +159,10 @@ void ConfigPanel::render(PanelContext& ctx) {
         }
 
         // ----- Tab 2: Coordinates ---------------------------------------
+        // Each coord row's button now opens the rebind modal for that
+        // coord's capture hotkey (capture.orb1, capture.baseItem, …).
+        // The actual capture flow only fires when the user presses the
+        // bound hotkey in-game — there's no manual-trigger button now.
         if (ImGui::BeginTabItem(tr("settings.tab.coords"))) {
             ImGui::Spacing();
 
@@ -151,21 +171,21 @@ void ConfigPanel::render(PanelContext& ctx) {
             auto& c = prof->coords;
 
             ImGui::TextUnformatted(tr("config.section.orbs"));
-            coordRow("orb1",     c.orb1, ctx);
-            coordRow("orb2",     c.orb2, ctx);
-            coordRow("orb3",     c.orb3, ctx);
+            coordRow(ctx, "orb1",     c.orb1);
+            coordRow(ctx, "orb2",     c.orb2);
+            coordRow(ctx, "orb3",     c.orb3);
 
             ImGui::Spacing();
             ImGui::TextUnformatted(tr("config.section.anchors"));
-            coordRow("baseItem", c.baseItem, ctx);
-            coordRow("p01Item",  c.p01Item,  ctx);
-            coordRow("p10Item",  c.p10Item,  ctx);
+            coordRow(ctx, "baseItem", c.baseItem);
+            coordRow(ctx, "p01Item",  c.p01Item);
+            coordRow(ctx, "p10Item",  c.p10Item);
 
             ImGui::Spacing();
             ImGui::TextUnformatted(tr("config.section.inventory"));
-            coordRow("invBase",  c.invBase, ctx);
-            coordRow("invP01",   c.invP01,  ctx);
-            coordRow("invP10",   c.invP10,  ctx);
+            coordRow(ctx, "invBase",  c.invBase);
+            coordRow(ctx, "invP01",   c.invP01);
+            coordRow(ctx, "invP10",   c.invP10);
 
             // Reset profile — wipes coords + craft/map/deposit/stats. The
             // confirm modal stops misclicks; auto-save means we don't ship
@@ -243,39 +263,22 @@ void ConfigPanel::render(PanelContext& ctx) {
                 ok = ctx.onRebindHotkey(rebindingId_, newBinding);
             }
             if (ok) {
+                // Success path covers both "no conflict" and the swap-on-
+                // conflict case (App handles the swap internally).
                 rebindingId_.clear();
                 rebindError_.clear();
                 ImGui::CloseCurrentPopup();
             } else {
-                std::string conflictId;
-                if (ctx.hotkeys) {
-                    for (const auto& [otherId, otherBinding] : *ctx.hotkeys) {
-                        if (otherId == rebindingId_) continue;
-                        if (otherBinding == newBinding) {
-                            conflictId = otherId;
-                            break;
-                        }
-                    }
-                }
-                if (!conflictId.empty()) {
-                    const char* otherLabelKey = conflictId.c_str();
-                    for (const auto& a : poebot::hotkey::allHotkeyActions()) {
-                        if (conflictId == a.id) { otherLabelKey = a.labelKey; break; }
-                    }
-                    char buf[256];
-                    std::snprintf(buf, sizeof(buf),
-                                  tr("settings.hotkeys.rebind_err_conflict_fmt"),
-                                  newBinding.format().c_str(),
-                                  tr(otherLabelKey));
-                    rebindError_ = buf;
-                } else {
-                    char buf[256];
-                    std::snprintf(buf, sizeof(buf),
-                                  tr("settings.hotkeys.rebind_err_unavailable_fmt"),
-                                  newBinding.format().c_str());
-                    rebindError_ = buf;
-                }
-                capture_.start();  // let user retry without re-clicking
+                // Only failure path left: another *application* owns the
+                // combo (RegisterHotKey returned 0). Show the inline error
+                // and rearm capture so the user can try a different combo
+                // without re-clicking the Rebind button.
+                char buf[256];
+                std::snprintf(buf, sizeof(buf),
+                              tr("settings.hotkeys.rebind_err_unavailable_fmt"),
+                              newBinding.format().c_str());
+                rebindError_ = buf;
+                capture_.start();
             }
         }
 

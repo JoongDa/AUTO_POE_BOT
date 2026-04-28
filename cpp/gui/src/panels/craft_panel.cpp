@@ -2,16 +2,14 @@
 
 #include <poebot/gui/affix_library_widget.hpp>
 #include <poebot/i18n/i18n.hpp>
-#include <poebot/task/craft_task.hpp>
 #include <poebot/task/task_runner.hpp>
-#include <poebot/win/window.hpp>
 
 #include <imgui.h>
-#include <spdlog/spdlog.h>
 
-#include <cfloat>
 #include <cstdio>
 #include <filesystem>
+#include <string>
+#include <string_view>
 
 namespace poebot::gui::panels {
 
@@ -56,7 +54,10 @@ void CraftPanel::render(PanelContext& ctx) {
 
     ImGui::Separator();
 
-    // Task controls
+    // Task display. No Start / Stop buttons anymore — pressing the bound
+    // hotkey (default F1 for craft, End for stop) is the only entry point;
+    // the hint footer below shows the live bindings so the user can find
+    // the key they currently have configured.
     auto* runner = ctx.taskRunner;
     if (runner) {
         using poebot::task::RunnerState;
@@ -64,28 +65,12 @@ void CraftPanel::render(PanelContext& ctx) {
         const bool ours  = std::string_view(runner->taskName()) == "Craft";
 
         if (state == RunnerState::Idle) {
-            // Stats from last run / persisted stats
             ImGui::Text(tr("craft.stats_fmt"), prof->stats.craftOps, prof->stats.craftHits);
             ImGui::SameLine();
             if (ImGui::SmallButton(tr("craft.reset_stats"))) {
                 prof->stats.craftOps  = 0;
                 prof->stats.craftHits = 0;
                 dirty = true;
-            }
-            ImGui::Spacing();
-
-            if (ImGui::Button(tr("craft.start"))) {
-                if (!ctx.gameWindow || !ctx.gameWindow->valid()) {
-                    spdlog::warn("craft: game window not found — launch POE first");
-                } else if (c.affixes.empty()) {
-                    spdlog::warn("craft: affix pattern is empty");
-                } else {
-                    poebot::task::CraftTask::Params p;
-                    p.gameWindow = ctx.gameWindow;
-                    p.craft      = c;
-                    p.coords     = prof->coords;
-                    runner->start(std::make_unique<poebot::task::CraftTask>(std::move(p)));
-                }
             }
         } else if (ours) {
             auto prog = runner->progress();
@@ -95,18 +80,21 @@ void CraftPanel::render(PanelContext& ctx) {
                 prog.totalItems > 0
                     ? static_cast<float>(prog.currentItem) / static_cast<float>(prog.totalItems)
                     : 0.0f);
-
-            if (state == RunnerState::Running) {
-                if (ImGui::Button(tr("common.stop"))) runner->requestStop();
-            } else {
-                ImGui::BeginDisabled(true);
-                ImGui::Button(tr("common.stopping"));
-                ImGui::EndDisabled();
+            if (state == RunnerState::Stopping) {
+                ImGui::TextDisabled("%s", tr("common.stopping"));
             }
         } else {
             ImGui::TextDisabled(tr("common.other_task_running_fmt"), runner->taskName());
         }
     }
+
+    // Hotkey hint footer — always present so the user always sees the
+    // current bindings, including after a custom rebind in Settings.
+    ImGui::Spacing();
+    const std::string startBind = poebot::gui::hotkeyLabel(ctx, "task.start.craft");
+    const std::string stopBind  = poebot::gui::hotkeyLabel(ctx, "task.stop");
+    ImGui::TextDisabled(tr("task.hotkey_hint_fmt"),
+                        startBind.c_str(), stopBind.c_str());
 
     if (dirty) ctx.dirty = true;
 }

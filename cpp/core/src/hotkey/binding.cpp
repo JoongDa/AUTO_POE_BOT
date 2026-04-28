@@ -197,22 +197,31 @@ HotkeyBinding HotkeyBinding::parse(std::string_view s) {
     return b;
 }
 
-const std::array<HotkeyAction, 11>& allHotkeyActions() noexcept {
-    // Ordered the way the Settings panel renders: global actions first
-    // (low-volume, high-impact), then the nine capture rows in their
-    // grouped order (orbs, anchors, inventory).
-    static const std::array<HotkeyAction, 11> k = {{
-        {"task.stop",         "hotkey.action.task.stop",         {0,           VK_END}},
-        {"overlay.toggle",    "hotkey.action.overlay.toggle",    {0,           VK_F9}},
-        {"capture.orb1",      "hotkey.action.capture.orb1",      {MOD_ALT,     '1'}},
-        {"capture.orb2",      "hotkey.action.capture.orb2",      {MOD_ALT,     '2'}},
-        {"capture.orb3",      "hotkey.action.capture.orb3",      {MOD_ALT,     '3'}},
-        {"capture.baseItem",  "hotkey.action.capture.baseItem",  {MOD_ALT,     '0'}},
-        {"capture.p01Item",   "hotkey.action.capture.p01Item",   {MOD_ALT,     '8'}},
-        {"capture.p10Item",   "hotkey.action.capture.p10Item",   {MOD_ALT,     '9'}},
-        {"capture.invBase",   "hotkey.action.capture.invBase",   {MOD_ALT,     '4'}},
-        {"capture.invP01",    "hotkey.action.capture.invP01",    {MOD_ALT,     '5'}},
-        {"capture.invP10",    "hotkey.action.capture.invP10",    {MOD_ALT,     '6'}},
+const std::array<HotkeyAction, 14>& allHotkeyActions() noexcept {
+    // Ordered the way the Settings panel renders. Top group is the
+    // task-control hotkeys the user touches most (F1/F2/F3 to start, End
+    // to stop); F9 sits with them as another global window-control key;
+    // capture rows fill the bottom in their grouped order (orbs, anchors,
+    // inventory).
+    //
+    // Adding a row here is enough to surface it everywhere — App's
+    // makeCallbackFor() picks the action up by id and the Settings panel
+    // renders it as soon as a matching i18n label exists.
+    static const std::array<HotkeyAction, 14> k = {{
+        {"task.start.craft",   "hotkey.action.task.start.craft",   {0,           VK_F1}},
+        {"task.start.map",     "hotkey.action.task.start.map",     {0,           VK_F2}},
+        {"task.start.deposit", "hotkey.action.task.start.deposit", {0,           VK_F3}},
+        {"task.stop",          "hotkey.action.task.stop",          {0,           VK_END}},
+        {"overlay.toggle",     "hotkey.action.overlay.toggle",     {0,           VK_F9}},
+        {"capture.orb1",       "hotkey.action.capture.orb1",       {MOD_ALT,     '1'}},
+        {"capture.orb2",       "hotkey.action.capture.orb2",       {MOD_ALT,     '2'}},
+        {"capture.orb3",       "hotkey.action.capture.orb3",       {MOD_ALT,     '3'}},
+        {"capture.baseItem",   "hotkey.action.capture.baseItem",   {MOD_ALT,     '0'}},
+        {"capture.p01Item",    "hotkey.action.capture.p01Item",    {MOD_ALT,     '8'}},
+        {"capture.p10Item",    "hotkey.action.capture.p10Item",    {MOD_ALT,     '9'}},
+        {"capture.invBase",    "hotkey.action.capture.invBase",    {MOD_ALT,     '4'}},
+        {"capture.invP01",     "hotkey.action.capture.invP01",     {MOD_ALT,     '5'}},
+        {"capture.invP10",     "hotkey.action.capture.invP10",     {MOD_ALT,     '6'}},
     }};
     return k;
 }
