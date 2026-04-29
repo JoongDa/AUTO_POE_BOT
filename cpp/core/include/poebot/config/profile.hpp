@@ -11,6 +11,9 @@ struct ProfileCoords {
     ClientPoint orb1{};       // currency 1 stack (left click = pick up)
     ClientPoint orb2{};       // currency 2 stack
     ClientPoint orb3{};       // currency 3 stack
+    int orb1Qty = -1;         // last detected stack size; -1 means unknown
+    int orb2Qty = -1;         // last detected stack size; -1 means unknown
+    int orb3Qty = -1;         // last detected stack size; -1 means unknown
     ClientPoint baseItem{};   // reference item at grid (row=0, col=0)
     ClientPoint p01Item{};    // item at (row=0, col=1) — used to derive X offset
     ClientPoint p10Item{};    // item at (row=1, col=0) — used to derive Y offset

@@ -38,6 +38,9 @@ inline void to_json(json& j, const ProfileCoords& c) {
         {"orb1", c.orb1},
         {"orb2", c.orb2},
         {"orb3", c.orb3},
+        {"orb1Qty", c.orb1Qty},
+        {"orb2Qty", c.orb2Qty},
+        {"orb3Qty", c.orb3Qty},
         {"baseItem", c.baseItem},
         {"p01Item", c.p01Item},
         {"p10Item", c.p10Item},
@@ -50,6 +53,9 @@ inline void from_json(const json& j, ProfileCoords& c) {
     c.orb1 = j.value("orb1", ClientPoint{});
     c.orb2 = j.value("orb2", ClientPoint{});
     c.orb3 = j.value("orb3", ClientPoint{});
+    c.orb1Qty = j.value("orb1Qty", -1);
+    c.orb2Qty = j.value("orb2Qty", -1);
+    c.orb3Qty = j.value("orb3Qty", -1);
     c.baseItem = j.value("baseItem", ClientPoint{});
     c.p01Item = j.value("p01Item", ClientPoint{});
     c.p10Item = j.value("p10Item", ClientPoint{});

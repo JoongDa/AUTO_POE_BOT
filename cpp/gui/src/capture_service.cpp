@@ -2,6 +2,7 @@
 
 #include <poebot/config/profile.hpp>
 #include <poebot/input/cursor.hpp>
+#include <poebot/task/task_util.hpp>
 
 #include <spdlog/spdlog.h>
 
@@ -67,6 +68,21 @@ bool CaptureService::captureNow(std::string_view name) {
     const ScreenPoint sp = poebot::input::cursorPosition();
     const ClientPoint cp = gw_->screenToClient(sp);
     *target = cp;
+
+    // For currency anchors, read and cache the current stack size so the
+    // Coordinates tab can display it next to (x,y), matching the AHK UX.
+    auto setOrbQty = [&](int* slot) {
+        if (!slot) return;
+        std::atomic<bool> stop{false};
+        if (auto qty = poebot::task::readOrbStack(stop, sp, std::chrono::milliseconds(500))) {
+            *slot = *qty;
+        } else {
+            *slot = -1;
+        }
+    };
+    if (name == "orb1") setOrbQty(&prof->coords.orb1Qty);
+    if (name == "orb2") setOrbQty(&prof->coords.orb2Qty);
+    if (name == "orb3") setOrbQty(&prof->coords.orb3Qty);
 
     spdlog::info("capture: '{}' recorded screen({},{}) → client({},{})",
                  name, sp.x, sp.y, cp.x, cp.y);

@@ -27,7 +27,7 @@ private:
     // default). Member function (not free) so the click handler can
     // poke rebindingId_ + capture_ without ConfigPanel having to leak
     // refs into a helper.
-    void coordRow(PanelContext& ctx, const char* name, poebot::ClientPoint& p);
+    void coordRow(PanelContext& ctx, const char* name, poebot::ClientPoint& p, const int* qty = nullptr);
 
     // Common click handler for any binding button on this panel — sets
     // rebind state and arms the keyboard hook. Called from coordRow and

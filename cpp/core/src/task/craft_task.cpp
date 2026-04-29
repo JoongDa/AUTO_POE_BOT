@@ -28,10 +28,27 @@ void CraftTask::run(std::atomic<bool>& stop, ProgressCallback report) {
 
     // Collect configured orb slots. Unset (0,0) slots are treated as "not
     // present" so a user who only set orb1+orb2 rotates between those two.
-    struct OrbSlot { const char* label; ScreenPoint sp; };
+    struct OrbSlot {
+        const char* label;
+        ScreenPoint sp;
+        int         remaining = -1;  // -1 => unknown
+        bool        depleted  = false;
+    };
     std::vector<OrbSlot> orbs;
     auto addOrb = [&](const char* lbl, const ClientPoint& cp) {
-        if (!isUnset(cp)) orbs.push_back({lbl, gw->clientToScreen(cp)});
+        if (!isUnset(cp)) {
+            OrbSlot o;
+            o.label = lbl;
+            o.sp = gw->clientToScreen(cp);
+            if (auto qty = readOrbStack(stop, o.sp, 500ms)) {
+                o.remaining = *qty;
+                o.depleted = (*qty == 0);
+                spdlog::info("craft: {} stack detected: {}", lbl, *qty);
+            } else {
+                spdlog::warn("craft: {} stack read failed, falling back to text-diff depletion detection", lbl);
+            }
+            orbs.push_back(o);
+        }
     };
     addOrb("orb1", co.orb1);
     addOrb("orb2", co.orb2);
@@ -52,6 +69,16 @@ void CraftTask::run(std::atomic<bool>& stop, ProgressCallback report) {
     // Rotate orb index across items so usage stays roughly even even when an
     // item hits early and the loop moves on before cycling through all orbs.
     size_t orbIdx = 0;
+
+    auto nextOrb = [&]() -> OrbSlot* {
+        if (orbs.empty()) return nullptr;
+        for (size_t tries = 0; tries < orbs.size(); ++tries) {
+            OrbSlot& o = orbs[orbIdx];
+            orbIdx = (orbIdx + 1) % orbs.size();
+            if (!o.depleted) return &o;
+        }
+        return nullptr;
+    };
 
     for (int idx = 0; idx < totalItems && !stop.load(); ++idx) {
         const int row = c.batch ? (idx / c.cols) : 0;
@@ -76,15 +103,27 @@ void CraftTask::run(std::atomic<bool>& stop, ProgressCallback report) {
         while (!stop.load()) {
             if (!gw->valid()) { spdlog::warn("craft: game window lost"); return; }
 
-            const OrbSlot& orb = orbs[orbIdx];
-            orbIdx = (orbIdx + 1) % orbs.size();
+            OrbSlot* orb = nextOrb();
+            if (!orb) {
+                spdlog::warn("craft: all configured orb stacks are depleted — stopping task");
+                spdlog::info("craft: done — ops={}, hits={}", prog.ops, prog.hits);
+                return;
+            }
 
             // Pick up currency.
-            if (!input::mouse::humanClick(stop, orb.sp, input::mouse::Button::Right)) return;
+            if (!input::mouse::humanClick(stop, orb->sp, input::mouse::Button::Right)) return;
 
             // Apply to item.
             if (!input::mouse::humanClick(stop, itemSP, input::mouse::Button::Left)) return;
             if (!input::motion::gaussSleep(stop, 200ms, 40ms, 120ms)) return;
+
+            if (orb->remaining > 0) {
+                --orb->remaining;
+                if (orb->remaining == 0) {
+                    orb->depleted = true;
+                    spdlog::info("craft: {} reached 0 stack after apply", orb->label);
+                }
+            }
 
             prog.ops++;
             report(prog);
@@ -101,7 +140,7 @@ void CraftTask::run(std::atomic<bool>& stop, ProgressCallback report) {
             // even if the other orbs still have stock (matches user spec).
             if (*cur == *prev) {
                 spdlog::warn("craft: {} appears empty (item unchanged after apply) — stopping task",
-                             orb.label);
+                             orb->label);
                 spdlog::info("craft: done — ops={}, hits={}", prog.ops, prog.hits);
                 return;
             }
@@ -111,7 +150,7 @@ void CraftTask::run(std::atomic<bool>& stop, ProgressCallback report) {
                 prog.hits++;
                 report(prog);
                 spdlog::info("craft: HIT on ({},{}) after {} ops (via {})",
-                             row, col, prog.ops, orb.label);
+                             row, col, prog.ops, orb->label);
 
                 // Dump the full clipboard text with match ranges so the log
                 // panel can render it with matched affixes highlighted.

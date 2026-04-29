@@ -52,6 +52,22 @@ void MapTask::run(std::atomic<bool>& stop, ProgressCallback report) {
     const int totalItems = m.batch ? (m.cols * m.rows) : 1;
     const ScreenPoint orb1SP = gw->clientToScreen(co.orb1);
     const ScreenPoint orb2SP = gw->clientToScreen(co.orb2);
+    int orb1Remain = -1;
+    int orb2Remain = -1;
+    if (auto q = readOrbStack(stop, orb1SP, 500ms)) {
+        orb1Remain = *q;
+        spdlog::info("map: orb1 stack detected: {}", orb1Remain);
+    } else {
+        spdlog::warn("map: orb1 stack read failed, using text-diff depletion detection");
+    }
+    if (m.mode == MapMode::AlchAndScour) {
+        if (auto q = readOrbStack(stop, orb2SP, 500ms)) {
+            orb2Remain = *q;
+            spdlog::info("map: orb2 stack detected: {}", orb2Remain);
+        } else {
+            spdlog::warn("map: orb2 stack read failed, using text-diff depletion detection");
+        }
+    }
 
     TaskProgress prog;
     prog.totalItems = totalItems;
@@ -94,7 +110,13 @@ void MapTask::run(std::atomic<bool>& stop, ProgressCallback report) {
 
             if (m.mode == MapMode::AlchAndScour) {
                 // --- Step 1: Alchemy --------------------------------------
+                if (orb1Remain == 0) {
+                    spdlog::warn("map: alch (orb1) depleted by stack count — stopping task");
+                    spdlog::info("map: done — ops={}, hits={}", prog.ops, prog.hits);
+                    return;
+                }
                 if (!applyOrb(stop, orb1SP, itemSP)) return;
+                if (orb1Remain > 0) --orb1Remain;
                 prog.ops++;
                 report(prog);
 
@@ -117,7 +139,13 @@ void MapTask::run(std::atomic<bool>& stop, ProgressCallback report) {
                 }
 
                 // --- Step 2: Scour to reset back to white -----------------
+                if (orb2Remain == 0) {
+                    spdlog::warn("map: scour (orb2) depleted by stack count — stopping task");
+                    spdlog::info("map: done — ops={}, hits={}", prog.ops, prog.hits);
+                    return;
+                }
                 if (!applyOrb(stop, orb2SP, itemSP)) return;
+                if (orb2Remain > 0) --orb2Remain;
                 if (!interruptibleSleep(stop, 100ms)) return;
 
                 auto afterScour = readItem(stop, itemSP);
@@ -133,7 +161,13 @@ void MapTask::run(std::atomic<bool>& stop, ProgressCallback report) {
 
             } else {
                 // --- Chaos mode -------------------------------------------
+                if (orb1Remain == 0) {
+                    spdlog::warn("map: chaos (orb1) depleted by stack count — stopping task");
+                    spdlog::info("map: done — ops={}, hits={}", prog.ops, prog.hits);
+                    return;
+                }
                 if (!applyOrb(stop, orb1SP, itemSP)) return;
+                if (orb1Remain > 0) --orb1Remain;
                 prog.ops++;
                 report(prog);
 

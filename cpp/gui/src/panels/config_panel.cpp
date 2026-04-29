@@ -56,7 +56,8 @@ void ConfigPanel::requestRebind(const char* actionId) {
 // pending (3-second window after the hotkey press), giving visible
 // feedback that the hotkey was received.
 void ConfigPanel::coordRow(PanelContext& ctx, const char* name,
-                           poebot::ClientPoint& p) {
+                           poebot::ClientPoint& p,
+                           const int* qty) {
     using poebot::i18n::tr;
     ImGui::PushID(name);
     ImGui::AlignTextToFramePadding();
@@ -73,6 +74,11 @@ void ConfigPanel::coordRow(PanelContext& ctx, const char* name,
         ImGui::TextDisabled("%s", tr("config.unset"));
     } else {
         ImGui::Text("(%d, %d)", p.x, p.y);
+        if (qty) {
+            ImGui::SameLine(200.0f);
+            if (*qty >= 0) ImGui::TextDisabled("x%d", *qty);
+            else           ImGui::TextDisabled("x?");
+        }
     }
     if (armed) ImGui::PopStyleColor();
 
@@ -176,9 +182,9 @@ void ConfigPanel::render(PanelContext& ctx) {
             auto& c = prof->coords;
 
             ImGui::TextUnformatted(tr("config.section.orbs"));
-            coordRow(ctx, "orb1",     c.orb1);
-            coordRow(ctx, "orb2",     c.orb2);
-            coordRow(ctx, "orb3",     c.orb3);
+            coordRow(ctx, "orb1",     c.orb1, &c.orb1Qty);
+            coordRow(ctx, "orb2",     c.orb2, &c.orb2Qty);
+            coordRow(ctx, "orb3",     c.orb3, &c.orb3Qty);
 
             ImGui::Spacing();
             ImGui::TextUnformatted(tr("config.section.anchors"));
