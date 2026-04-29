@@ -2,6 +2,7 @@
 
 #include <poebot/config/affix_library.hpp>
 #include <poebot/i18n/i18n.hpp>
+#include <poebot/sys/encoding.hpp>
 
 #include <imgui.h>
 #include <spdlog/spdlog.h>
@@ -10,6 +11,7 @@
 #include <shellapi.h>
 
 #include <cstdio>
+#include <filesystem>
 #include <map>
 #include <string>
 #include <system_error>
@@ -34,6 +36,25 @@ void shellOpen(const char* utf8) {
     std::wstring w(static_cast<size_t>(n - 1), L'\0');
     ::MultiByteToWideChar(CP_UTF8, 0, utf8, -1, w.data(), n);
     shellOpen(w);
+}
+void shellOpen(const std::filesystem::path& target) {
+#ifdef _WIN32
+    shellOpen(target.wstring());
+#else
+    shellOpen(target.string().c_str());
+#endif
+}
+
+std::filesystem::path libraryFilePath(const std::filesystem::path& dir,
+                                      std::string_view name) {
+    std::filesystem::path path = dir;
+    const std::string filename = std::string(name) + ".txt";
+#ifdef _WIN32
+    path /= poebot::sys::utf8ToWide(filename);
+#else
+    path /= filename;
+#endif
+    return path;
 }
 
 // Render text that looks and acts like a browser link: accent color,
@@ -102,7 +123,7 @@ void affixLibraryWidget(const std::filesystem::path& dir,
     // from the previous session).
     static std::map<std::string, std::filesystem::file_time_type> watchTimes;
     if (!selected.empty() && dirUsable) {
-        const auto path = dir / (selected + ".txt");
+        const auto path = libraryFilePath(dir, selected);
         std::error_code ec;
         const auto t = std::filesystem::last_write_time(path, ec);
         if (!ec) {
@@ -146,11 +167,9 @@ void affixLibraryWidget(const std::filesystem::path& dir,
         for (const auto& n : libs) {
             const bool isSel = (selected == n);
             // Right-align line count for a quick sense of library size.
-            char label[128];
             const std::string body = al::loadAffixLibrary(dir, n);
-            std::snprintf(label, sizeof(label), "%s  (%d)",
-                          n.c_str(), countLines(body));
-            if (ImGui::Selectable(label, isSel)) {
+            const std::string label = n + "  (" + std::to_string(countLines(body)) + ")";
+            if (ImGui::Selectable(label.c_str(), isSel)) {
                 if (!isSel) {
                     selected = n;
                     content  = body;
@@ -182,8 +201,8 @@ void affixLibraryWidget(const std::filesystem::path& dir,
 
     ImGui::BeginDisabled(selected.empty());
     if (ImGui::Button(tr("affix_lib.edit"))) {
-        const auto path = dir / (selected + ".txt");
-        shellOpen(path.string().c_str());
+        const auto path = libraryFilePath(dir, selected);
+        shellOpen(path);
     }
     ImGui::SameLine();
     if (ImGui::Button(tr("affix_lib.reload"))) {
@@ -200,7 +219,7 @@ void affixLibraryWidget(const std::filesystem::path& dir,
         // user gets a real folder even if onActiveProfileChanged hasn't
         // run yet for this scope.
         al::ensureAffixLibraryDir(dir);
-        shellOpen(dir.string().c_str());
+        shellOpen(dir);
     }
 
     ImGui::EndDisabled();  // !dirUsable

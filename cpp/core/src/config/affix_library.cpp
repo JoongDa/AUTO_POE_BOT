@@ -1,5 +1,9 @@
 #include <poebot/config/affix_library.hpp>
 
+#include "atomic_replace_file.hpp"
+
+#include <poebot/sys/encoding.hpp>
+
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
@@ -28,8 +32,21 @@ bool iless(const std::string& a, const std::string& b) {
 std::filesystem::path pathFor(const std::filesystem::path& dir,
                               std::string_view name) {
     std::filesystem::path p = dir;
-    p /= std::string(name) + kLibExt;
+    const std::string filename = std::string(name) + kLibExt;
+#ifdef _WIN32
+    p /= poebot::sys::utf8ToWide(filename);
+#else
+    p /= filename;
+#endif
     return p;
+}
+
+std::string stemAsUtf8(const std::filesystem::path& path) {
+#ifdef _WIN32
+    return poebot::sys::wideToUtf8(path.stem().wstring());
+#else
+    return path.stem().string();
+#endif
 }
 
 }  // namespace
@@ -58,7 +75,7 @@ std::vector<std::string> listAffixLibraries(const std::filesystem::path& dir) {
         if (!entry.is_regular_file()) continue;
         const auto& p = entry.path();
         if (p.extension() != kLibExt) continue;
-        out.push_back(p.stem().string());
+        out.push_back(stemAsUtf8(p));
     }
     std::sort(out.begin(), out.end(), iless);
     return out;
@@ -104,14 +121,7 @@ bool saveAffixLibrary(const std::filesystem::path& dir,
         }  // close flushes to disk
 
         std::error_code ec;
-        std::filesystem::rename(tmp, final, ec);
-        if (ec) {
-            // rename can fail on Windows if target exists on some filesystems;
-            // remove and retry once before giving up.
-            std::filesystem::remove(final, ec);
-            std::filesystem::rename(tmp, final, ec);
-        }
-        if (ec) {
+        if (!detail::atomicReplaceFile(tmp, final, ec)) {
             spdlog::warn("affix_library: rename {} -> {} failed: {}",
                          tmp.string(), final.string(), ec.message());
             std::error_code rm_ec;

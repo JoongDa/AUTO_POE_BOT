@@ -1,5 +1,7 @@
 #include <poebot/config/settings_io.hpp>
 
+#include "atomic_replace_file.hpp"
+
 #include <poebot/hotkey/binding.hpp>
 
 #include <nlohmann/json.hpp>
@@ -263,8 +265,7 @@ bool saveSettings(const Settings& s, const std::filesystem::path& path) {
         }  // ofstream closes here, flushing to disk
 
         std::error_code ec;
-        std::filesystem::rename(tmp, path, ec);
-        if (ec) {
+        if (!detail::atomicReplaceFile(tmp, path, ec)) {
             spdlog::error("failed renaming {} -> {}: {}", tmp.string(), path.string(), ec.message());
             std::error_code rm_ec;
             std::filesystem::remove(tmp, rm_ec);  // best-effort cleanup
@@ -313,8 +314,7 @@ bool atomicWriteJson(const std::filesystem::path& path, const json& j) {
             if (!f) { spdlog::error("write tmp {}: failed", tmp.string()); return false; }
         }
         std::error_code ec;
-        std::filesystem::rename(tmp, path, ec);
-        if (ec) {
+        if (!detail::atomicReplaceFile(tmp, path, ec)) {
             spdlog::error("rename {} -> {}: {}", tmp.string(), path.string(), ec.message());
             std::error_code rm_ec;
             std::filesystem::remove(tmp, rm_ec);
