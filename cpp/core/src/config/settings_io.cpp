@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <fstream>
 #include <string>
 #include <system_error>
@@ -32,6 +33,45 @@ inline void from_json(const json& j, ClientPoint& p) {
 }  // namespace poebot
 
 namespace poebot::config {
+
+namespace {
+
+int readGridDimension(const json& j,
+                      const char* section,
+                      const char* key,
+                      int fallback,
+                      int minValue,
+                      int maxValue) {
+    const auto it = j.find(key);
+    if (it == j.end()) return fallback;
+
+    if (!it->is_number_integer()) {
+        spdlog::warn("settings: {}.{} must be an integer in [{}..{}], using default {}",
+                     section, key, minValue, maxValue, fallback);
+        return fallback;
+    }
+
+    if (it->is_number_unsigned()) {
+        const auto raw = it->get<std::uint64_t>();
+        if (raw < static_cast<std::uint64_t>(minValue) ||
+            raw > static_cast<std::uint64_t>(maxValue)) {
+            spdlog::warn("settings: {}.{}={} outside allowed range [{}..{}], using default {}",
+                         section, key, raw, minValue, maxValue, fallback);
+            return fallback;
+        }
+        return static_cast<int>(raw);
+    }
+
+    const auto raw = it->get<std::int64_t>();
+    if (raw < minValue || raw > maxValue) {
+        spdlog::warn("settings: {}.{}={} outside allowed range [{}..{}], using default {}",
+                     section, key, raw, minValue, maxValue, fallback);
+        return fallback;
+    }
+    return static_cast<int>(raw);
+}
+
+}  // namespace
 
 inline void to_json(json& j, const ProfileCoords& c) {
     j = json{
@@ -75,8 +115,8 @@ inline void to_json(json& j, const CraftSettings& c) {
 }
 inline void from_json(const json& j, CraftSettings& c) {
     c.batch = j.value("batch", false);
-    c.cols = j.value("cols", 10);
-    c.rows = j.value("rows", 2);
+    c.cols = readGridDimension(j, "craft", "cols", 10, 1, 24);
+    c.rows = readGridDimension(j, "craft", "rows", 2, 1, 12);
     c.affixes = j.value("affixes", std::string{});
     c.affixLibrary = j.value("affixLibrary", std::string{});
 }
@@ -95,8 +135,8 @@ inline void from_json(const json& j, MapSettings& m) {
     const int mode = j.value("mode", 1);
     m.mode = (mode == 2) ? MapMode::Chaos : MapMode::AlchAndScour;
     m.batch = j.value("batch", false);
-    m.cols = j.value("cols", 4);
-    m.rows = j.value("rows", 3);
+    m.cols = readGridDimension(j, "map", "cols", 4, 1, 12);
+    m.rows = readGridDimension(j, "map", "rows", 3, 1, 12);
     m.affixes = j.value("affixes", std::string{});
     m.affixLibrary = j.value("affixLibrary", std::string{});
 }
@@ -105,8 +145,8 @@ inline void to_json(json& j, const DepositSettings& d) {
     j = json{{"cols", d.cols}, {"rows", d.rows}};
 }
 inline void from_json(const json& j, DepositSettings& d) {
-    d.cols = j.value("cols", 12);
-    d.rows = j.value("rows", 5);
+    d.cols = readGridDimension(j, "deposit", "cols", 12, 1, 24);
+    d.rows = readGridDimension(j, "deposit", "rows", 5, 1, 12);
 }
 
 inline void to_json(json& j, const ProfileStats& s) {
