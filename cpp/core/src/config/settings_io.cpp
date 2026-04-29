@@ -47,6 +47,16 @@ int readGridDimension(const json& j,
     const auto it = j.find(key);
     if (it == j.end()) return fallback;
 
+    // Both branches below converge on the same "value sits outside our
+    // range" warning, just with raw typed unsigned vs. signed depending
+    // on the JSON literal. The lambda dedupes the format string so the
+    // two log lines stay phrased identically.
+    auto outOfRange = [&](auto raw) {
+        spdlog::warn("settings: {}.{}={} outside allowed range [{}..{}], using default {}",
+                     section, key, raw, minValue, maxValue, fallback);
+        return fallback;
+    };
+
     if (!it->is_number_integer()) {
         spdlog::warn("settings: {}.{} must be an integer in [{}..{}], using default {}",
                      section, key, minValue, maxValue, fallback);
@@ -57,19 +67,13 @@ int readGridDimension(const json& j,
         const auto raw = it->get<std::uint64_t>();
         if (raw < static_cast<std::uint64_t>(minValue) ||
             raw > static_cast<std::uint64_t>(maxValue)) {
-            spdlog::warn("settings: {}.{}={} outside allowed range [{}..{}], using default {}",
-                         section, key, raw, minValue, maxValue, fallback);
-            return fallback;
+            return outOfRange(raw);
         }
         return static_cast<int>(raw);
     }
 
     const auto raw = it->get<std::int64_t>();
-    if (raw < minValue || raw > maxValue) {
-        spdlog::warn("settings: {}.{}={} outside allowed range [{}..{}], using default {}",
-                     section, key, raw, minValue, maxValue, fallback);
-        return fallback;
-    }
+    if (raw < minValue || raw > maxValue) return outOfRange(raw);
     return static_cast<int>(raw);
 }
 

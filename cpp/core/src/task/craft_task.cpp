@@ -58,6 +58,20 @@ void CraftTask::run(std::atomic<bool>& stop, ProgressCallback report) {
         return;
     }
 
+    // Surface the run mode up-front so the log makes it obvious whether
+    // we're relying on stack-count termination or the slower text-diff
+    // fallback for every orb. Catches "tooltip locale isn't English and
+    // hasn't been added to parseStackSize" without the user having to
+    // notice three separate "stack read failed" lines above.
+    bool anyDetected = false;
+    for (const auto& o : orbs) {
+        if (o.remaining >= 0) { anyDetected = true; break; }
+    }
+    if (!anyDetected) {
+        spdlog::warn("craft: stack-count detection unavailable for all orbs — "
+                     "running in text-diff fallback mode (slower, less precise)");
+    }
+
     const int totalItems = c.batch ? (c.cols * c.rows) : 1;
 
     TaskProgress prog;

@@ -4,6 +4,7 @@
 #include <poebot/sys/clipboard.hpp>
 #include <poebot/task/task.hpp>
 
+#include <array>
 #include <chrono>
 #include <cctype>
 #include <optional>
@@ -32,14 +33,29 @@ inline std::optional<std::string> readItemClipboard(
     return std::nullopt;
 }
 
-// Parse "Stack Size: 123/20" (or "Stack Size: 1,234/20") and return the
-// current stack count (the first number). Returns nullopt on parse failure.
+// Parse the current stack count out of a copied currency tooltip ("Stack
+// Size: 123/20", or "1,234/20"). Tries each known label so non-English
+// PoE clients work too — extend the array if a locale we don't cover
+// shows up. Returns nullopt on parse failure.
 inline std::optional<int> parseStackSize(std::string_view text) {
-    constexpr std::string_view kKey = "Stack Size:";
-    const auto pos = text.find(kKey);
+    // Order doesn't matter for correctness; the English label leads
+    // simply because it's the most common in our dataset.
+    static constexpr std::array<std::string_view, 4> kKeys = {
+        "Stack Size:",     // English (international PoE 1/2)
+        "堆叠数量:",       // Simplified Chinese
+        "堆疊數量:",       // Traditional Chinese
+        "堆疊大小:",       // Traditional Chinese (alt)
+    };
+
+    std::size_t pos    = std::string_view::npos;
+    std::size_t keyLen = 0;
+    for (const auto& k : kKeys) {
+        const auto p = text.find(k);
+        if (p != std::string_view::npos) { pos = p; keyLen = k.size(); break; }
+    }
     if (pos == std::string_view::npos) return std::nullopt;
 
-    std::size_t i = pos + kKey.size();
+    std::size_t i = pos + keyLen;
     while (i < text.size() && std::isspace(static_cast<unsigned char>(text[i]))) ++i;
 
     int value = 0;
@@ -60,19 +76,19 @@ inline std::optional<int> parseStackSize(std::string_view text) {
     return value;
 }
 
-// Hover a currency stack, Ctrl+C, and parse "Stack Size". Returns nullopt on
+// Hover a currency stack, Ctrl+C, parse "Stack Size". Returns nullopt on
 // timeout/stop/parse failure.
+//
+// Earlier versions did an up-then-back jiggle to "force" the tooltip to
+// refresh. Removed: PoE redraws the tooltip on hover-enter regardless,
+// and the visible cursor wobble was distracting in-game. A single move
+// + 150 ms settle is enough on every test we've run.
 inline std::optional<int> readOrbStack(
     std::atomic<bool>& stop,
     ScreenPoint orbSP,
     std::chrono::milliseconds timeout = std::chrono::milliseconds(500)) {
-    // Nudge up then back to make sure the tooltip refreshes.
-    if (!poebot::input::motion::bezierMoveTo(stop, ScreenPoint{orbSP.x, orbSP.y - 40})) {
-        return std::nullopt;
-    }
-    if (!interruptibleSleep(stop, std::chrono::milliseconds(40))) return std::nullopt;
     if (!poebot::input::motion::bezierMoveTo(stop, orbSP)) return std::nullopt;
-    if (!interruptibleSleep(stop, std::chrono::milliseconds(80))) return std::nullopt;
+    if (!interruptibleSleep(stop, std::chrono::milliseconds(150))) return std::nullopt;
 
     auto clip = readItemClipboard(stop, timeout);
     if (!clip) return std::nullopt;
