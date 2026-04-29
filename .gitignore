@@ -2,7 +2,7 @@
 Bot.ini
 
 # Claude Code
-.claude/
+#.claude/
 
 # Visual Studio local workspace/cache files
 .vs/
@@ -13,3 +13,6 @@ Bot - *.ahk
 # C++ bot runtime artifacts (when launched from repo root)
 imgui.ini
 poe-bot.log
+
+cpp/CV
+

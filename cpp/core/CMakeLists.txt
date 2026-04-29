@@ -7,6 +7,8 @@ add_library(poebot-core STATIC
     src/log/log_sink.cpp
     src/sys/encoding.cpp
     src/sys/clipboard.cpp
+    src/sys/screen_capture.cpp
+    src/vision/template_match.cpp
     src/win/window.cpp
     src/input/cursor.cpp
     src/input/mouse.cpp
