@@ -10,7 +10,8 @@
       "toolchainFile": "C:/vcpkg/scripts/buildsystems/vcpkg.cmake",
       "cacheVariables": {
         "CMAKE_CONFIGURATION_TYPES": "Debug;Release",
-        "VCPKG_TARGET_TRIPLET": "x64-windows-static-md"
+        "VCPKG_TARGET_TRIPLET": "x64-windows-static-md",
+        "OpenCV_DIR": "C:/Program Files/OpenCV/opencv/build/x64/vc16/lib"
       }
     }
   ],

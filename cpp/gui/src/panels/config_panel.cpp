@@ -4,6 +4,8 @@
 #include <poebot/coords.hpp>
 #include <poebot/gui/capture_service.hpp>
 #include <poebot/i18n/i18n.hpp>
+#include <poebot/sys/screen_capture.hpp>
+#include <poebot/vision/template_match.hpp>
 
 #include <imgui.h>
 #include <spdlog/spdlog.h>
@@ -211,6 +213,15 @@ void ConfigPanel::render(PanelContext& ctx) {
             ImGui::EndTabItem();
         }
 
+        // Trailing tab — right-aligned in the tab bar. Contains the OpenCV
+        // template-matching auto-calibration workflow.
+        if (ImGui::BeginTabItem(tr("settings.tab.auto_calibrate"),
+                                nullptr,
+                                ImGuiTabItemFlags_Trailing)) {
+            renderAutoCalibrate(ctx);
+            ImGui::EndTabItem();
+        }
+
         ImGui::EndTabBar();
     }
 
@@ -347,6 +358,177 @@ void ConfigPanel::render(PanelContext& ctx) {
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndPopup();
+    }
+}
+
+// ============================================================
+// Auto-calibrate tab
+// ============================================================
+
+void ConfigPanel::renderAutoCalibrate(PanelContext& ctx) {
+    using poebot::i18n::tr;
+
+    // Lazy-load templates the first time this tab is rendered.
+    if (!templatesLoaded_ && ctx.settingsRoot) {
+        templateLib_.load(*ctx.settingsRoot / "templates");
+        templatesLoaded_ = true;
+    }
+
+    // Directory path + reload button on the same line.
+    if (ctx.settingsRoot) {
+        const auto dir = *ctx.settingsRoot / "templates";
+        ImGui::TextDisabled("%s", dir.string().c_str());
+    } else {
+        ImGui::TextDisabled("templates/");
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton(tr("auto_cal.load"))) {
+        if (ctx.settingsRoot) {
+            templateLib_.load(*ctx.settingsRoot / "templates");
+            calibStatus_.clear();
+        }
+    }
+    ImGui::Spacing();
+
+    if (!templateLib_.anyLoaded()) {
+        ImGui::TextDisabled("%s", tr("auto_cal.no_templates"));
+        ImGui::Spacing();
+    }
+
+    // Per-template rows: name | current coord | Manual button
+    auto* prof = ctx.settings ? ctx.settings->active() : nullptr;
+    for (const auto& entry : templateLib_.entries()) {
+        ImGui::PushID(entry.coordName.c_str());
+        ImGui::AlignTextToFramePadding();
+
+        // Column 1: coord name
+        ImGui::Text("%-10s", entry.coordName.c_str());
+        ImGui::SameLine(110.0f);
+
+        // Column 2: current value
+        if (!entry.loaded) {
+            ImGui::TextDisabled("%s", tr("auto_cal.template_missing"));
+        } else if (prof) {
+            const auto* coord = poebot::config::findCoordByName(*prof, entry.coordName);
+            if (!coord || poebot::isUnset(*coord)) {
+                ImGui::TextDisabled("%s", tr("config.unset"));
+            } else {
+                ImGui::Text("(%d, %d)", coord->x, coord->y);
+            }
+        } else {
+            ImGui::TextDisabled("%s", tr("config.unset"));
+        }
+
+        // Column 3: Manual capture button (3-second countdown via CaptureService)
+        ImGui::SameLine(220.0f);
+        if (ImGui::SmallButton(tr("auto_cal.manual"))) {
+            if (ctx.capture) {
+                ctx.capture->startCapture(entry.coordName);
+            }
+        }
+
+        ImGui::PopID();
+    }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // "Start Auto Calibrate" — disabled when the game window is absent or
+    // no templates are loaded (nothing to match against).
+    const bool canStart =
+        templateLib_.anyLoaded() &&
+        ctx.gameWindow && ctx.gameWindow->valid();
+
+    if (!canStart) ImGui::BeginDisabled();
+    if (ImGui::Button(tr("auto_cal.start"))) {
+        runAutoCalibrate(ctx);
+    }
+    if (!canStart) ImGui::EndDisabled();
+
+    if (!calibStatus_.empty()) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("%s", calibStatus_.c_str());
+    }
+}
+
+void ConfigPanel::runAutoCalibrate(PanelContext& ctx) {
+    using poebot::i18n::tr;
+
+    calibStatus_.clear();
+
+    // Pre-conditions
+    if (!ctx.gameWindow || !ctx.gameWindow->valid()) {
+        calibStatus_ = tr("auto_cal.err_no_game");
+        return;
+    }
+    auto* prof = ctx.settings ? ctx.settings->active() : nullptr;
+    if (!prof) return;
+
+    // 1. Capture the game client area via BitBlt.
+    const HWND hwnd = ctx.gameWindow->hwnd();
+    auto capOpt = poebot::sys::captureClient(hwnd);
+    if (!capOpt) {
+        calibStatus_ = tr("auto_cal.err_capture");
+        return;
+    }
+    const int captureW = capOpt->width;
+    const int captureH = capOpt->height;
+
+    // 2. Wrap as ImageBGRA (zero-copy move of the pixel buffer).
+    auto haystack = poebot::vision::ImageBGRA::fromCaptured(std::move(*capOpt));
+
+    // 3. Normalize to 1920×1080. Templates are authored at this resolution so
+    //    the same set works for 1080p, 1440p, and 4K game windows.
+    constexpr int kTargetW = 1920;
+    constexpr int kTargetH = 1080;
+    if (haystack.width != kTargetW || haystack.height != kTargetH) {
+        haystack = poebot::vision::resize(haystack, kTargetW, kTargetH);
+    }
+    if (haystack.pixels.empty()) {
+        calibStatus_ = tr("auto_cal.err_capture");
+        return;
+    }
+
+    // 4. Match each loaded template; threshold at 0.70 (TM_CCOEFF_NORMED).
+    constexpr float kMinScore = 0.70f;
+    int updated = 0;
+
+    for (const auto& entry : templateLib_.entries()) {
+        if (!entry.loaded) continue;
+
+        const auto res = poebot::vision::match(haystack, entry.image);
+        if (!res || res->score < kMinScore) {
+            spdlog::debug("auto_cal: '{}' no match (score={:.2f})",
+                          entry.coordName, res ? res->score : 0.0f);
+            continue;
+        }
+
+        // Convert match top-left to template center in 1080p space, then
+        // back-project to actual client coordinates.
+        const float cx1080 = static_cast<float>(res->x) + entry.image.width  * 0.5f;
+        const float cy1080 = static_cast<float>(res->y) + entry.image.height * 0.5f;
+        const int   clientX = static_cast<int>(cx1080 * captureW / kTargetW);
+        const int   clientY = static_cast<int>(cy1080 * captureH / kTargetH);
+
+        auto* coord = poebot::config::findCoordByName(*prof, entry.coordName);
+        if (coord) {
+            coord->x = clientX;
+            coord->y = clientY;
+            ++updated;
+            spdlog::info("auto_cal: '{}' → ({}, {})  score={:.2f}",
+                         entry.coordName, clientX, clientY, res->score);
+        }
+    }
+
+    // 5. Persist and report.
+    if (updated > 0) {
+        ctx.dirty = true;
+        char buf[128];
+        std::snprintf(buf, sizeof(buf), tr("auto_cal.done_fmt"), updated);
+        calibStatus_ = buf;
+    } else {
+        calibStatus_ = tr("auto_cal.no_match");
     }
 }
 

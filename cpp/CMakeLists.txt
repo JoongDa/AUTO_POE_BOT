@@ -39,6 +39,11 @@ find_package(imgui CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 
+# ---------------- OpenCV (local install) ----------------
+# OpenCV_DIR is set in CMakePresets.json → build/x64/vc17/lib
+# Override on the command line: cmake -DOpenCV_DIR=<path> ...
+find_package(OpenCV REQUIRED)
+
 # ---------------- Subdirectories ----------------
 add_subdirectory(core)
 add_subdirectory(gui)

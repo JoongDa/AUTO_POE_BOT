@@ -13,6 +13,7 @@
 #include <poebot/task/craft_task.hpp>
 #include <poebot/task/deposit_task.hpp>
 #include <poebot/task/map_task.hpp>
+#include <poebot/sys/encoding.hpp>
 #include <poebot/version.hpp>
 
 #include <imgui.h>
@@ -44,10 +45,29 @@ int App::run(HINSTANCE hInstance, int nCmdShow) {
     loadOrDefaultSettings();
     poebot::i18n::setLanguage(settings_.language);
 
-    if (!window_.create(hInstance, L"POE Bot v0.1.0", 1200, 760)) {
-        spdlog::error("failed to create main window");
-        return 1;
-    }
+    const std::wstring windowTitle = poebot::sys::utf8ToWide(
+        std::string(poebot::kAppName) + " v" + poebot::kAppVersion);
+
+    // Logical canvas: 520 × 780 points (same apparent size on every monitor).
+    // Physical pixels = logical × (systemDpi / 96).
+    // On a 100%-DPI monitor  → 520 × 780  physical pixels  (no change).
+    // On a 200%-DPI monitor  → 1040 × 1560 physical pixels (same screen area,
+    //   twice the detail — the Mac Retina 2× equivalent on Windows).
+    // GetDpiForSystem() is safe to call before an HWND exists; it returns the
+    // system-wide DPI which matches the primary monitor where CW_USEDEFAULT
+    // will place the window.
+    constexpr int kLogicalW = 520;
+    constexpr int kLogicalH = 780;
+    {
+        const UINT sysDpi  = ::GetDpiForSystem();
+        const float initS  = (sysDpi > 0) ? static_cast<float>(sysDpi) / 96.0f : 1.0f;
+        if (!window_.create(hInstance, windowTitle.c_str(),
+                            static_cast<int>(kLogicalW * initS),
+                            static_cast<int>(kLogicalH * initS))) {
+            spdlog::error("failed to create main window");
+            return 1;
+        }
+    }  // sysDpi / initS scope
 
     // Message filter: WM_HOTKEY is ours; everything else goes to ImGui.
     window_.setMessageFilter([this](HWND h, UINT m, WPARAM w, LPARAM l) {
@@ -557,6 +577,15 @@ void App::initImGui() {
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
+    // Query the per-monitor DPI now that the HWND exists. This is more
+    // precise than GetDpiForSystem() when the window lands on a non-primary
+    // monitor. Both applyAppearance() and loadFonts() read dpiScale_.
+    {
+        const UINT dpi = ::GetDpiForWindow(window_.hwnd());
+        dpiScale_ = (dpi > 0) ? static_cast<float>(dpi) / 96.0f : 1.0f;
+        spdlog::info("HiDPI: dpi={} scale={:.2f}x", dpi, dpiScale_);
+    }
+
     applyAppearance();
     loadFonts();
 
@@ -586,6 +615,12 @@ void App::applyAppearance() {
     if (dark) applyMacDark();
     else      applyMacLight();
 
+    // Convert every style scalar from 96-DPI logical units to physical-pixel
+    // space. applyMacBase() always resets to absolute logical values, so
+    // ScaleAllSizes is safe to call every theme switch without accumulating.
+    // On 96-DPI displays dpiScale_ == 1.0 and this is a no-op.
+    ImGui::GetStyle().ScaleAllSizes(dpiScale_);
+
     // Keep the swap-chain clear color matched to WindowBg so resize flashes
     // don't show the opposite theme for a frame.
     const ImVec4& bg = ImGui::GetStyle().Colors[ImGuiCol_WindowBg];
@@ -600,24 +635,26 @@ void App::applyAppearance() {
 void App::applyMacBase() {
     ImGuiStyle& s = ImGui::GetStyle();
 
-    // --- Spacing ------------------------------------------------------------
-    s.WindowPadding    = ImVec2(16, 14);
-    s.FramePadding     = ImVec2(12, 6);
-    s.CellPadding      = ImVec2(8, 6);
-    s.ItemSpacing      = ImVec2(10, 8);
-    s.ItemInnerSpacing = ImVec2(8, 6);
-    s.IndentSpacing    = 20.0f;
-    s.ScrollbarSize    = 12.0f;
-    s.GrabMinSize      = 10.0f;
+    // --- Spacing (proportionally scaled for 780×520 window) ----------------
+    // Original values were tuned for 1200×760.
+    // Width scale ×0.65 (780/1200), height scale ×0.684 (520/760).
+    s.WindowPadding    = ImVec2(10,  9);   // was (16, 14)
+    s.FramePadding     = ImVec2( 8,  4);   // was (12,  6) — drives Tab & row height
+    s.CellPadding      = ImVec2( 5,  4);   // was ( 8,  6)
+    s.ItemSpacing      = ImVec2( 6,  6);   // was (10,  8)
+    s.ItemInnerSpacing = ImVec2( 5,  4);   // was ( 8,  6)
+    s.IndentSpacing    = 13.0f;            // was 20
+    s.ScrollbarSize    =  8.0f;            // was 12
+    s.GrabMinSize      =  7.0f;            // was 10
 
-    // --- Rounding (macOS-ish: larger on surfaces, medium on controls) -------
-    s.WindowRounding    = 10.0f;
-    s.ChildRounding     = 8.0f;
-    s.FrameRounding     = 6.0f;
-    s.PopupRounding     = 8.0f;
-    s.ScrollbarRounding = 12.0f;
-    s.GrabRounding      = 6.0f;
-    s.TabRounding       = 6.0f;
+    // --- Rounding (×0.65) --------------------------------------------------
+    s.WindowRounding    = 6.0f;   // was 10
+    s.ChildRounding     = 5.0f;   // was  8
+    s.FrameRounding     = 4.0f;   // was  6
+    s.PopupRounding     = 5.0f;   // was  8
+    s.ScrollbarRounding = 8.0f;   // was 12
+    s.GrabRounding      = 4.0f;   // was  6
+    s.TabRounding       = 4.0f;   // was  6
 
     // --- Borders (intentionally absent — macOS uses color, not lines) ------
     s.WindowBorderSize = 0.0f;
@@ -782,7 +819,11 @@ void App::loadFonts() {
     // Microsoft YaHei merged on top for CJK coverage. Both ship with every
     // modern Windows install and are what Explorer / Settings themselves use.
     ImGuiIO& io = ImGui::GetIO();
-    constexpr float kSize = 18.0f;
+    // Physical font size = logical size × DPI scale.
+    // At 96 DPI (100 %): 18 px — same as before.
+    // At 192 DPI (200 %, Retina-equivalent): 36 physical px rendered into
+    //   the same apparent visual area → same size on screen, twice as crisp.
+    const float kSize = 18.0f * dpiScale_;
 
     auto exists = [](const char* p) {
         std::error_code ec;

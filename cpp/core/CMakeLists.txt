@@ -9,6 +9,7 @@ add_library(poebot-core STATIC
     src/sys/clipboard.cpp
     src/sys/screen_capture.cpp
     src/vision/template_match.cpp
+    src/vision/template_library.cpp
     src/win/window.cpp
     src/input/cursor.cpp
     src/input/mouse.cpp
@@ -26,6 +27,7 @@ add_library(poebot-core STATIC
 target_include_directories(poebot-core
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${OpenCV_INCLUDE_DIRS}
 )
 
 target_compile_features(poebot-core PUBLIC cxx_std_20)
@@ -34,4 +36,5 @@ target_link_libraries(poebot-core
     PUBLIC
         spdlog::spdlog
         nlohmann_json::nlohmann_json
+        ${OpenCV_LIBS}
 )

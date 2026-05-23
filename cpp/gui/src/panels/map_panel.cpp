@@ -53,7 +53,7 @@ void MapPanel::render(PanelContext& ctx) {
             ? (*ctx.affixLibraryDir / "map")
             : std::filesystem::path{};
         poebot::gui::affixLibraryWidget(dir, m.affixLibrary, m.affixes,
-                                        "map", &libChanged);
+                                        "map", prof->name.c_str(), &libChanged);
         if (libChanged) dirty = true;
     }
 

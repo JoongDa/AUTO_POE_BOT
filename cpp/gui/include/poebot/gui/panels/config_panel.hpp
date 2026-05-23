@@ -3,6 +3,7 @@
 #include <poebot/gui/hotkey_capture.hpp>
 #include <poebot/gui/panel.hpp>
 #include <poebot/i18n/i18n.hpp>
+#include <poebot/vision/template_library.hpp>
 
 #include <string>
 
@@ -34,12 +35,26 @@ private:
     // from the Hotkeys-tab inline loop.
     void requestRebind(const char* actionId);
 
+    // Render the Auto Calibrate tab body. Lazy-loads the template library on
+    // first call and delegates calibration to runAutoCalibrate().
+    void renderAutoCalibrate(PanelContext& ctx);
+
+    // Synchronously capture the game window, normalize to 1920×1080, run
+    // cv::matchTemplate for every loaded template, and write matches above
+    // kMinScore into the active profile. Updates calibStatus_ when done.
+    void runAutoCalibrate(PanelContext& ctx);
+
     // Rebind modal state. While `rebindingId_` is non-empty the modal is
     // open and the hook in `capture_` is intercepting all keyboard input
     // process-wide. ESC or a successful commit clears this back to "".
     std::string                           rebindingId_;
     std::string                           rebindError_;
     poebot::gui::HotkeyCapture            capture_;
+
+    // Auto-calibrate state
+    poebot::vision::TemplateLibrary       templateLib_;
+    bool                                  templatesLoaded_ = false;
+    std::string                           calibStatus_;
 };
 
 }  // namespace poebot::gui::panels

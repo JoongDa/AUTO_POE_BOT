@@ -48,7 +48,7 @@ void CraftPanel::render(PanelContext& ctx) {
             ? (*ctx.affixLibraryDir / "craft")
             : std::filesystem::path{};
         poebot::gui::affixLibraryWidget(dir, c.affixLibrary, c.affixes,
-                                        "craft", &libChanged);
+                                        "craft", prof->name.c_str(), &libChanged);
         if (libChanged) dirty = true;
     }
 

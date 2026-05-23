@@ -135,39 +135,6 @@ bool saveAffixLibrary(const std::filesystem::path& dir,
     }
 }
 
-bool renameAffixLibrary(const std::filesystem::path& dir,
-                        std::string_view from,
-                        std::string_view to) {
-    if (!isValidAffixLibraryName(from) || !isValidAffixLibraryName(to)) return false;
-    if (from == to) return true;
-    std::error_code ec;
-    auto src = pathFor(dir, from);
-    auto dst = pathFor(dir, to);
-    if (!std::filesystem::exists(src, ec)) return false;
-    if (std::filesystem::exists(dst, ec)) return false;  // don't silently clobber
-    std::filesystem::rename(src, dst, ec);
-    if (ec) {
-        spdlog::warn("affix_library: rename {} -> {} failed: {}",
-                     src.string(), dst.string(), ec.message());
-        return false;
-    }
-    return true;
-}
-
-bool deleteAffixLibrary(const std::filesystem::path& dir,
-                        std::string_view name) {
-    if (!isValidAffixLibraryName(name)) return false;
-    std::error_code ec;
-    auto p = pathFor(dir, name);
-    if (!std::filesystem::exists(p, ec)) return true;  // already gone
-    std::filesystem::remove(p, ec);
-    if (ec) {
-        spdlog::warn("affix_library: remove {} failed: {}", p.string(), ec.message());
-        return false;
-    }
-    return true;
-}
-
 void seedDefaultAffixLibraries(const std::filesystem::path& dir,
                                std::string_view category) {
     if (!ensureAffixLibraryDir(dir)) return;

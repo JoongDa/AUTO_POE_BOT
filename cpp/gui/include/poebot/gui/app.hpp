@@ -127,6 +127,13 @@ private:
     // Cached D3D11 clear color; kept in sync with the active theme so resizes
     // don't flash the opposite color behind the ImGui surface.
     float clearColor_[4] = {0.96f, 0.96f, 0.97f, 1.0f};
+
+    // Physical-pixels-per-logical-pixel ratio for the window's monitor.
+    // Queried once in initImGui() via GetDpiForWindow(); used by loadFonts()
+    // to size the font atlas and by applyAppearance() to scale ImGui style
+    // values from 96-DPI logical units to physical-pixel space.
+    // Defaults to 1.0 (96 DPI / no scaling) so pre-init calls are safe.
+    float dpiScale_ = 1.0f;
 };
 
 }  // namespace poebot::gui

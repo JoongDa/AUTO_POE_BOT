@@ -36,18 +36,6 @@ bool saveAffixLibrary(const std::filesystem::path& dir,
                       std::string_view name,
                       std::string_view content);
 
-// Rename one library. Fails if the source doesn't exist, the target
-// already exists, or the target name is invalid. No fallback / merge —
-// the UI confirms with the user before calling this.
-bool renameAffixLibrary(const std::filesystem::path& dir,
-                        std::string_view from,
-                        std::string_view to);
-
-// Remove one library file. Returns true if the file was removed OR
-// already absent (idempotent). Returns false only on filesystem errors.
-bool deleteAffixLibrary(const std::filesystem::path& dir,
-                        std::string_view name);
-
 // Reject names that would collide with the filesystem or produce files the
 // OS can't handle: empty, any of `\/:*?"<>|`, trailing dot/space, or > 64
 // chars. Keeps names short enough to fit the dropdown comfortably.

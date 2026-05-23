@@ -97,7 +97,12 @@
       "Bash(git -C C:/Code/VS/AHK add cpp/core/src/i18n/i18n.cpp cpp/gui/src/app.cpp cpp/gui/src/panels/config_panel.cpp cpp/gui/src/panels/main_layout.cpp)",
       "Bash(git -C C:/Code/VS/AHK show 22bb5d8 -- cpp/core/src/task/map_task.cpp)",
       "Bash(git -C C:/Code/VS/AHK add cpp/core/src/config/atomic_replace_file.hpp cpp/core/src/config/affix_library.cpp cpp/core/src/config/settings_io.cpp cpp/gui/src/affix_library_widget.cpp)",
-      "Bash(git -C C:/Code/VS/AHK add cpp/core/include/poebot/task/task_util.hpp cpp/core/src/config/atomic_replace_file.hpp cpp/core/src/config/settings_io.cpp cpp/core/src/task/craft_task.cpp cpp/gui/src/capture_service.cpp)"
+      "Bash(git -C C:/Code/VS/AHK add cpp/core/include/poebot/task/task_util.hpp cpp/core/src/config/atomic_replace_file.hpp cpp/core/src/config/settings_io.cpp cpp/core/src/task/craft_task.cpp cpp/gui/src/capture_service.cpp)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Program Files\\\\OpenCV\" -Recurse -Filter \"OpenCVConfig.cmake\" -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(find \"/c/Program Files/OpenCV\" -name \"OpenCVConfig.cmake\" 2>/dev/null)",
+      "Bash(git -C \"C:\\\\Code\\\\VS\\\\AHK\\\\.claude\\\\worktrees\\\\hungry-mayer-68698a\" diff --staged)",
+      "Bash(git -C \"C:\\\\Code\\\\VS\\\\AHK\\\\.claude\\\\worktrees\\\\hungry-mayer-68698a\" diff)"
     ]
   }
 }

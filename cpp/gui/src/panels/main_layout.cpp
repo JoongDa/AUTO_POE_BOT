@@ -10,8 +10,8 @@ namespace poebot::gui::panels {
 
 namespace {
 
-constexpr float kSidebarWidth  = 130.0f;
-constexpr float kLogPanelWidth = 360.0f;
+constexpr float kSidebarWidth   =  85.0f;   // 130 × 0.65
+constexpr float kLogPanelHeight = 140.0f;   // 200 × 0.684
 
 void renderMenuBar(PanelContext& ctx) {
     using poebot::i18n::tr;
@@ -103,7 +103,7 @@ void renderAppearanceFab(PanelContext& ctx) {
     using poebot::i18n::tr;
     if (!ctx.settings) return;
 
-    constexpr float kBtnSize = 28.0f;
+    constexpr float kBtnSize = 18.0f;   // 28 × 0.65
 
     // Pin to the bottom-right of the current window (the sidebar). Using
     // window-local content-region coords, not absolute viewport coords, so
@@ -114,7 +114,7 @@ void renderAppearanceFab(PanelContext& ctx) {
     // gap to the border, which reads as too much whitespace for a control
     // that's supposed to feel tucked into the corner. `kOverhang` pushes
     // the FAB half-way back into the padding so the visible gap is ~6px.
-    constexpr float kOverhang = 6.0f;
+    constexpr float kOverhang = 4.0f;   // 6 × 0.65
     const ImVec2 contentMax = ImGui::GetWindowContentRegionMax();
     ImGui::SetCursorPos(ImVec2(contentMax.x - kBtnSize + kOverhang,
                                contentMax.y - kBtnSize + kOverhang));
@@ -267,7 +267,7 @@ void renderSidebar(const std::vector<std::unique_ptr<Panel>>& panels,
                                       : ImVec4(0, 0, 0, 0.08f);
 
     ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,    ImVec2(12, 8));
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,    ImVec2(8, 4));   // matches scaled global (8,4)
 
     for (auto& p : panels) {
         if (!p || p->kind() != PanelKind::Tab) continue;
@@ -286,7 +286,7 @@ void renderSidebar(const std::vector<std::unique_ptr<Panel>>& panels,
         // Push name() as the stable ImGui id so the button doesn't lose its
         // state when label() changes with the active language.
         ImGui::PushID(p->name());
-        if (ImGui::Button(p->label(), ImVec2(-FLT_MIN, 34.0f))) {
+        if (ImGui::Button(p->label(), ImVec2(-FLT_MIN, 22.0f))) {   // 34 × 0.65
             ctx.activePanel = p->name();
         }
         ImGui::PopID();
@@ -315,9 +315,9 @@ void renderMainLayout(const std::vector<std::unique_ptr<Panel>>& panels,
     //   kEdgePad  → host inset (gap between window frame and child panels)
     //   kPanelPad → inner inset (gap between panel border and its content)
     //   kColumnGap → horizontal channel between the three columns
-    constexpr float kEdgePad   = 14.0f;
-    constexpr float kPanelPad  = 12.0f;
-    constexpr float kColumnGap = 12.0f;
+    constexpr float kEdgePad   =  9.0f;   // 14 × 0.65
+    constexpr float kPanelPad  =  8.0f;   // 12 × 0.65
+    constexpr float kColumnGap =  8.0f;   // 12 × 0.65
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding,   0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
@@ -327,34 +327,25 @@ void renderMainLayout(const std::vector<std::unique_ptr<Panel>>& panels,
 
     renderMenuBar(ctx);
 
-    // Re-push WindowPadding so each child window gets an internal inset
-    // (BeginChild inherits the *current* style; the host's padding was
-    // already popped above). Wider column gap than the default ItemSpacing
-    // gives the three panels visible "channels" between them.
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
-                        ImVec2(kPanelPad, kPanelPad));
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
-                        ImVec2(kColumnGap, ImGui::GetStyle().ItemSpacing.y));
+    // Re-push WindowPadding so each child window gets an internal inset.
+    // Use kColumnGap for both axes so the gap between the active panel and
+    // the log panel below it matches the horizontal gap next to the sidebar.
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(kPanelPad, kPanelPad));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,   ImVec2(kColumnGap, kColumnGap));
 
-    // Three-column layout: [sidebar | active panel | log panel].
-    // The sidebar carries the FAB at its bottom-right; the active panel
-    // fills whatever's between, the log panel hugs the right edge.
+    // Two-column layout: [sidebar (left, full height) | right column].
+    // The right column is split vertically into:
+    //   – active panel (top, fills remaining height minus log)
+    //   – log panel    (bottom, kLogPanelHeight tall)
     //
-    // ImGuiChildFlags_AlwaysUseWindowPadding is REQUIRED here. Without it,
-    // ImGui silently zeros WindowPadding for any child whose effective
-    // border size is 0 (and our macOS-ish style sets ChildBorderSize=0 to
-    // avoid hairline borders). The Borders flag is intentionally omitted —
-    // we rely on ChildBg color contrast, not lines, for panel separation.
+    // ImGuiChildFlags_AlwaysUseWindowPadding is REQUIRED: without it ImGui
+    // silently zeros WindowPadding for border-less children (ChildBorderSize=0
+    // in our macOS style). Borders are omitted — panel separation comes from
+    // the ChildBg color contrast.
     constexpr ImGuiChildFlags kPanelChildFlags =
         ImGuiChildFlags_AlwaysUseWindowPadding;
 
-    // Sidebar is purely a fixed navigation strip — no scrolling, ever.
-    //   NoScrollbar       hides the bar (FAB overhangs contentMax by a few
-    //                     px which would otherwise auto-mount one).
-    //   NoScrollWithMouse blocks wheel input. Without it, hovering + wheel
-    //                     still translates content vertically, causing the
-    //                     tabs to jitter even though the bar is hidden.
-    // Both flags are needed; NoScrollbar alone only hides the visual.
+    // Sidebar: fixed-width navigation strip, no scrolling.
     constexpr ImGuiWindowFlags kSidebarFlags =
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
     ImGui::BeginChild("##Sidebar", ImVec2(kSidebarWidth, 0),
@@ -365,17 +356,36 @@ void renderMainLayout(const std::vector<std::unique_ptr<Panel>>& panels,
 
     ImGui::SameLine();
 
-    const float availWidth  = ImGui::GetContentRegionAvail().x;
-    const float middleWidth = availWidth - kLogPanelWidth - kColumnGap;
+    // Right column wrapper — transparent, zero-padding container that keeps
+    // ##ActivePanel and ##LogRegion locked to the right lane (after the
+    // sidebar). Without this wrapper, ImGui's row-break after ##Sidebar
+    // resets X to the parent's left edge, causing both panels to underrun
+    // the sidebar. The vertical gap between the two inner panels comes from
+    // the inherited ItemSpacing.y (= kColumnGap, pushed above).
+    constexpr ImGuiWindowFlags kRightColFlags =
+        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+    ImGui::BeginChild("##RightCol", ImVec2(0, 0), ImGuiChildFlags_None, kRightColFlags);
+    ImGui::PopStyleVar();  // WindowPadding (inner panels inherit the outer kPanelPad)
 
-    ImGui::BeginChild("##ActivePanel", ImVec2(middleWidth, 0), kPanelChildFlags);
+    const float availH  = ImGui::GetContentRegionAvail().y;
+    const float gapY    = ImGui::GetStyle().ItemSpacing.y;  // = kColumnGap
+    const float activeH = availH - kLogPanelHeight - gapY;
+
+    ImGui::BeginChild("##ActivePanel", ImVec2(0, activeH), kPanelChildFlags);
+    // Halve the vertical item spacing inside the content area so rows sit
+    // tighter. The layout-level kColumnGap (used for sidebar/log gaps) is
+    // unaffected — this override only lives inside ##ActivePanel.
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                        ImVec2(kColumnGap, kColumnGap * 0.5f));
     if (Panel* active = resolveActiveTabPanel(panels, ctx.activePanel)) {
         active->render(ctx);
     }
+    ImGui::PopStyleVar();  // ItemSpacing (content row spacing)
     ImGui::EndChild();
 
-    ImGui::SameLine();
-
+    // Log panel — directly below the active panel, bottom-aligns with the
+    // sidebar because ##RightCol shares the same parent height.
     ImGui::BeginChild("##LogRegion", ImVec2(0, 0), kPanelChildFlags);
     for (auto& p : panels) {
         if (p && p->kind() == PanelKind::Log) {
@@ -384,6 +394,8 @@ void renderMainLayout(const std::vector<std::unique_ptr<Panel>>& panels,
         }
     }
     ImGui::EndChild();
+
+    ImGui::EndChild();  // ##RightCol
 
     ImGui::PopStyleVar(2);  // ItemSpacing + WindowPadding
 

@@ -37,10 +37,13 @@ namespace poebot::gui {
 //   - the file watcher noticing the bound file changed on disk,
 //   - the user clicking Reload.
 // Pass an empty `dir` to render the widget in a disabled state.
+// `profileName` is the active GameProfile::name (e.g. "poe1", "poe2").
+// It controls which poe.re domain is shown in the hint row.
 void affixLibraryWidget(const std::filesystem::path& dir,
                         std::string& selected,
                         std::string& content,
                         const char* idScope,
+                        const char* profileName,
                         bool* outChanged);
 
 }  // namespace poebot::gui

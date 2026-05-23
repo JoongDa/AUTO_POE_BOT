@@ -20,7 +20,9 @@ namespace poebot::gui {
 
 namespace {
 
-constexpr const char* kPoeReURL = "https://poe.re/";
+// Base URL for the hint row; poe2 profile uses the sister site.
+constexpr const char* kPoeReURL  = "https://poe.re/";
+constexpr const char* kPoe2ReURL = "https://poe2.re/";
 
 // Fire-and-forget URL / file open via the shell. Both the affix file and the
 // poe.re link share the same code path — the shell figures out whether to
@@ -96,6 +98,7 @@ void affixLibraryWidget(const std::filesystem::path& dir,
                         std::string& selected,
                         std::string& content,
                         const char* idScope,
+                        const char* profileName,
                         bool* outChanged) {
     using poebot::i18n::tr;
     namespace al = poebot::config;
@@ -109,6 +112,14 @@ void affixLibraryWidget(const std::filesystem::path& dir,
     const auto libs = dir.empty() ? std::vector<std::string>{}
                                   : al::listAffixLibraries(dir);
     const bool dirUsable = !dir.empty();
+
+    // Auto-select the first available library when nothing is bound yet.
+    // The UI never shows an empty selection — if libs exist, one must be active.
+    if (selected.empty() && !libs.empty() && dirUsable) {
+        selected = libs[0];
+        content  = al::loadAffixLibrary(dir, selected);
+        changed  = true;
+    }
 
     // --- File watcher ----------------------------------------------------
     // The user edits libraries in their preferred external editor (notepad,
@@ -149,30 +160,32 @@ void affixLibraryWidget(const std::filesystem::path& dir,
     ImGui::SameLine();
 
     ImGui::SetNextItemWidth(220.0f);
-    const char* comboPreview = selected.empty()
-        ? tr("affix_lib.none")
-        : selected.c_str();
+    const char* comboPreview = selected.empty() ? tr("affix_lib.none") : selected.c_str();
     if (ImGui::BeginCombo("##lib", comboPreview)) {
-        // "(none)" clears the selection (disables matching for this panel
-        // until the user picks again).
-        const bool noneSel = selected.empty();
-        if (ImGui::Selectable(tr("affix_lib.none"), noneSel)) {
-            if (!noneSel) {
-                selected.clear();
-                content.clear();
-                changed = true;
-            }
-        }
-        if (!libs.empty()) ImGui::Separator();
+        // Line-count cache: keyed by "<idScope>/<name>", invalidated on mtime
+        // change. Avoids reading every library file on every frame while the
+        // combo is open — only re-reads when a file actually changes on disk.
+        static std::map<std::string, std::pair<std::filesystem::file_time_type, int>> s_lineCache;
         for (const auto& n : libs) {
             const bool isSel = (selected == n);
-            // Right-align line count for a quick sense of library size.
-            const std::string body = al::loadAffixLibrary(dir, n);
-            const std::string label = n + "  (" + std::to_string(countLines(body)) + ")";
+            const std::string cacheKey = std::string(idScope) + "/" + n;
+            std::error_code ec;
+            const auto mtime = std::filesystem::last_write_time(libraryFilePath(dir, n), ec);
+            int lines = 0;
+            if (!ec) {
+                auto it = s_lineCache.find(cacheKey);
+                if (it == s_lineCache.end() || it->second.first != mtime) {
+                    lines = countLines(al::loadAffixLibrary(dir, n));
+                    s_lineCache[cacheKey] = {mtime, lines};
+                } else {
+                    lines = it->second.second;
+                }
+            }
+            const std::string label = n + "  (" + std::to_string(lines) + ")";
             if (ImGui::Selectable(label.c_str(), isSel)) {
                 if (!isSel) {
                     selected = n;
-                    content  = body;
+                    content  = al::loadAffixLibrary(dir, n);
                     changed  = true;
                 }
             }
@@ -180,8 +193,29 @@ void affixLibraryWidget(const std::filesystem::path& dir,
         ImGui::EndCombo();
     }
 
-    // Inline rule count next to the combo so the user can tell at a glance
-    // whether the bound library is empty or full.
+    // "+" sits right next to the combo — creates a new library immediately.
+    // Base name is the panel scope ("craft" / "map"); append "-N" if it exists.
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!dirUsable);
+    if (ImGui::Button("+")) {
+        std::string newName = idScope;
+        for (int suffix = 1;
+             std::find(libs.begin(), libs.end(), newName) != libs.end();
+             ++suffix) {
+            newName = std::string(idScope) + "-" + std::to_string(suffix);
+        }
+        if (al::saveAffixLibrary(dir, newName, "")) {
+            selected = newName;
+            content.clear();
+            changed = true;
+            shellOpen(libraryFilePath(dir, newName));
+        } else {
+            spdlog::warn("affix_lib: could not create '{}'", newName);
+        }
+    }
+    ImGui::EndDisabled();
+
+    // Inline rule count after the "+" button.
     if (!selected.empty()) {
         ImGui::SameLine();
         char rules[64];
@@ -191,12 +225,9 @@ void affixLibraryWidget(const std::filesystem::path& dir,
     }
 
     // --- Row 2: action buttons -------------------------------------------
-    // Edit  → open the bound .txt with the system default text editor
+    // Edit   → open the bound .txt with the system default text editor
     // Reload → force re-read from disk (manual nudge if file watcher missed)
-    // Folder → reveal the affix_libraries directory in Explorer; user does
-    //          new / rename / delete / copy via the file system (everyone
-    //          who runs a Bot is comfortable with that, and the app doesn't
-    //          need to grow its own file manager).
+    // Folder → reveal the affix_libraries directory in Explorer
     ImGui::BeginDisabled(!dirUsable);
 
     ImGui::BeginDisabled(selected.empty());
@@ -225,9 +256,11 @@ void affixLibraryWidget(const std::filesystem::path& dir,
     ImGui::EndDisabled();  // !dirUsable
 
     // --- Row 3: poe.re hint ---------------------------------------------
+    const char* poeReURL = (profileName && std::string_view(profileName) == "poe2")
+        ? kPoe2ReURL : kPoeReURL;
     ImGui::TextDisabled("%s", tr("affix_lib.poere_prefix"));
     ImGui::SameLine(0.0f, 4.0f);
-    renderLink(kPoeReURL, kPoeReURL);
+    renderLink(poeReURL, poeReURL);
 
     ImGui::PopID();
     if (outChanged) *outChanged = changed;

@@ -10,12 +10,9 @@
 // screen frame and a currency icon template, find where the template sits
 // in the frame and how confidently we matched.
 //
-// We hand-roll Normalised Cross-Correlation (NCC) instead of pulling in
-// OpenCV: the algorithm is ~50 lines, sub-100 ms on a 64×64 template
-// against a 1920×1080 frame, and avoids dragging an 80 MB dependency
-// before we're sure we want it. When we get to YOLO (the project's
-// memory-noted long-term plan), OpenCV becomes unavoidable and this
-// module's interface stays the same — only the implementation swaps.
+// Backed by cv::matchTemplate (TM_CCOEFF_NORMED) — OpenCV's SIMD-accelerated
+// normalised cross-correlation. The interface is intentionally decoupled from
+// cv::Mat so callers stay independent of OpenCV headers.
 namespace poebot::vision {
 
 // A 4-channel BGRA bitmap. Same layout produced by

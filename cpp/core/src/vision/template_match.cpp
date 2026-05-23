@@ -1,150 +1,46 @@
 #include <poebot/vision/template_match.hpp>
 
+#include <opencv2/imgproc.hpp>
+
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
-#include <cmath>
+#include <cstring>
 
 namespace poebot::vision {
 
 namespace {
 
-// Convert a BGRA pixel to grayscale luminance using Rec.601 weights.
-// NCC operates on a single channel; using luminance instead of one
-// arbitrary color channel keeps the matcher resilient against the
-// slight color shifts PoE sometimes applies (e.g. the brief flash
-// when an item is hovered).
-inline float lumaAt(const ImageBGRA& img, int x, int y) {
-    const std::uint8_t* p = &img.pixels[y * img.stride + x * 4];
-    // BGRA layout from the BitBlt path → indices 2/1/0 = R/G/B.
-    return 0.299f * p[2] + 0.587f * p[1] + 0.114f * p[0];
-}
-
-// Compute mean and inverse stddev of a region of `img`. Used for
-// per-window NCC normalisation. Returns false (and zeros) if the
-// region has near-zero variance — those degenerate windows can't be
-// scored meaningfully and would otherwise produce divide-by-zero NaNs.
-bool windowStats(const ImageBGRA& img, int x0, int y0, int tw, int th,
-                 float& outMean, float& outInvStd) {
-    double sum = 0.0;
-    double sumSq = 0.0;
-    const int n = tw * th;
-    for (int y = 0; y < th; ++y) {
-        for (int x = 0; x < tw; ++x) {
-            const float v = lumaAt(img, x0 + x, y0 + y);
-            sum   += v;
-            sumSq += static_cast<double>(v) * v;
-        }
-    }
-    const double mean = sum / n;
-    const double var  = sumSq / n - mean * mean;
-    if (var < 1e-3) {            // flat patch
-        outMean   = static_cast<float>(mean);
-        outInvStd = 0.0f;
-        return false;
-    }
-    outMean   = static_cast<float>(mean);
-    outInvStd = static_cast<float>(1.0 / std::sqrt(var));
-    return true;
-}
-
-// NCC of `templ` placed at (x0, y0) in `haystack`. tplMean / tplInvStd
-// are precomputed (template stats don't change between candidate windows).
-float nccAt(const ImageBGRA& haystack,
-            const ImageBGRA& templ,
-            int x0, int y0,
-            float tplMean, float tplInvStd) {
-    const int tw = templ.width;
-    const int th = templ.height;
-
-    float winMean = 0.0f, winInvStd = 0.0f;
-    if (!windowStats(haystack, x0, y0, tw, th, winMean, winInvStd)) {
-        return 0.0f;
-    }
-
-    double dot = 0.0;
-    for (int y = 0; y < th; ++y) {
-        for (int x = 0; x < tw; ++x) {
-            const float h = lumaAt(haystack, x0 + x, y0 + y) - winMean;
-            const float t = lumaAt(templ,    x,      y     ) - tplMean;
-            dot += static_cast<double>(h) * t;
-        }
-    }
-    const int n = tw * th;
-    return static_cast<float>(dot * winInvStd * tplInvStd / n);
-}
-
-// Sliding-window scan over `haystack` (bounded by `area`) computing NCC
-// at every position; returns the best-scoring location. Caller has
-// already validated dimensions.
-MatchResult bestInArea(const ImageBGRA& haystack,
-                       const ImageBGRA& templ,
-                       const Rect&      area,
-                       float            tplMean,
-                       float            tplInvStd) {
-    MatchResult best;
-    best.score = -2.0f;  // any real NCC ∈ [-1, 1] beats this sentinel
-
-    const int xMax = area.x + area.w - templ.width;
-    const int yMax = area.y + area.h - templ.height;
-
-    for (int y = area.y; y <= yMax; ++y) {
-        for (int x = area.x; x <= xMax; ++x) {
-            const float s = nccAt(haystack, templ, x, y, tplMean, tplInvStd);
-            if (s > best.score) {
-                best.score = s;
-                best.x     = x;
-                best.y     = y;
-            }
-        }
-    }
-    return best;
+// Wrap an ImageBGRA pixel buffer as a cv::Mat without copying.
+// The const_cast is safe: the resulting Mat is only ever read from.
+cv::Mat toMat(const ImageBGRA& img) {
+    return cv::Mat(img.height, img.width, CV_8UC4,
+                   const_cast<uint8_t*>(img.pixels.data()),
+                   static_cast<std::size_t>(img.stride));
 }
 
 }  // namespace
 
 ImageBGRA resize(const ImageBGRA& src, int newWidth, int newHeight) {
+    if (src.width <= 0 || src.height <= 0 || newWidth <= 0 || newHeight <= 0)
+        return {};
+
+    cv::Mat dst;
+    cv::resize(toMat(src), dst, cv::Size(newWidth, newHeight), 0.0, 0.0, cv::INTER_LINEAR);
+
     ImageBGRA out;
-    if (src.width <= 0 || src.height <= 0 ||
-        newWidth   <= 0 || newHeight  <= 0) {
-        return out;
-    }
     out.width  = newWidth;
     out.height = newHeight;
     out.stride = newWidth * 4;
-    out.pixels.assign(static_cast<std::size_t>(newWidth) * newHeight * 4, 0);
-
-    // Standard bilinear: for each destination pixel, sample 4 source
-    // pixels and weighted-average. Good enough at the small scales we
-    // use here (|src/dst − 1| < 0.5) — at extreme rescales we'd want
-    // a proper resampler, but multi-scale matching never asks for that.
-    const float xRatio = static_cast<float>(src.width  - 1) / std::max(1, newWidth  - 1);
-    const float yRatio = static_cast<float>(src.height - 1) / std::max(1, newHeight - 1);
-
-    for (int dy = 0; dy < newHeight; ++dy) {
-        const float sy = dy * yRatio;
-        const int   y0 = static_cast<int>(sy);
-        const int   y1 = std::min(y0 + 1, src.height - 1);
-        const float fy = sy - y0;
-
-        for (int dx = 0; dx < newWidth; ++dx) {
-            const float sx = dx * xRatio;
-            const int   x0 = static_cast<int>(sx);
-            const int   x1 = std::min(x0 + 1, src.width - 1);
-            const float fx = sx - x0;
-
-            std::uint8_t* dstP = &out.pixels[dy * out.stride + dx * 4];
-            for (int c = 0; c < 4; ++c) {
-                const float p00 = src.pixels[y0 * src.stride + x0 * 4 + c];
-                const float p10 = src.pixels[y0 * src.stride + x1 * 4 + c];
-                const float p01 = src.pixels[y1 * src.stride + x0 * 4 + c];
-                const float p11 = src.pixels[y1 * src.stride + x1 * 4 + c];
-
-                const float top = p00 * (1 - fx) + p10 * fx;
-                const float bot = p01 * (1 - fx) + p11 * fx;
-                dstP[c] = static_cast<std::uint8_t>(top * (1 - fy) + bot * fy + 0.5f);
-            }
-        }
+    out.pixels.resize(static_cast<std::size_t>(newWidth) * newHeight * 4);
+    // Copy row by row to respect dst.step[0] — OpenCV may pad rows for
+    // alignment, so a single memcpy of the whole buffer would interleave
+    // padding bytes into our pixel data.
+    const std::size_t rowBytes = static_cast<std::size_t>(newWidth) * 4;
+    for (int y = 0; y < newHeight; ++y) {
+        std::memcpy(out.pixels.data() + y * out.stride,
+                    dst.data + y * dst.step[0],
+                    rowBytes);
     }
     return out;
 }
@@ -154,43 +50,49 @@ std::optional<MatchResult> match(
     const ImageBGRA& templ,
     const Rect*      searchArea) {
 
-    if (haystack.width  <= 0 || haystack.height <= 0 ||
-        templ.width     <= 0 || templ.height    <= 0) {
+    if (haystack.width <= 0 || haystack.height <= 0 ||
+        templ.width    <= 0 || templ.height    <= 0) {
         return std::nullopt;
     }
     if (templ.width > haystack.width || templ.height > haystack.height) {
         spdlog::warn("template_match: template ({}x{}) larger than haystack ({}x{})",
-                     templ.width, templ.height,
-                     haystack.width, haystack.height);
+                     templ.width, templ.height, haystack.width, haystack.height);
         return std::nullopt;
     }
 
-    // Precompute template stats once — they're invariant across the scan.
-    float tplMean = 0.0f, tplInvStd = 0.0f;
-    if (!windowStats(templ, 0, 0, templ.width, templ.height,
-                     tplMean, tplInvStd)) {
-        spdlog::warn("template_match: template has no contrast; cannot match");
-        return std::nullopt;
-    }
+    // Convert both images to grayscale — single-channel is faster for
+    // matchTemplate and consistent with the old NCC grayscale behavior.
+    cv::Mat hayGray, tplGray;
+    cv::cvtColor(toMat(haystack), hayGray, cv::COLOR_BGRA2GRAY);
+    cv::cvtColor(toMat(templ),    tplGray, cv::COLOR_BGRA2GRAY);
 
-    Rect area;
+    // Restrict the search to an optional sub-rect of the haystack.
+    cv::Mat   roi      = hayGray;
+    cv::Point roiOffset{0, 0};
     if (searchArea) {
-        // Clamp caller's area to image bounds so a slightly oversized
-        // hint doesn't read OOB.
-        area.x = std::max(0, searchArea->x);
-        area.y = std::max(0, searchArea->y);
-        area.w = std::min(haystack.width  - area.x, searchArea->w);
-        area.h = std::min(haystack.height - area.y, searchArea->h);
-    } else {
-        area = Rect{0, 0, haystack.width, haystack.height};
-    }
-    if (area.w < templ.width || area.h < templ.height) {
-        return std::nullopt;
+        const int x = std::max(0, searchArea->x);
+        const int y = std::max(0, searchArea->y);
+        const int w = std::min(hayGray.cols - x, searchArea->w);
+        const int h = std::min(hayGray.rows - y, searchArea->h);
+        if (w < templ.width || h < templ.height) return std::nullopt;
+        roi       = hayGray(cv::Rect(x, y, w, h));
+        roiOffset = {x, y};
     }
 
-    auto best = bestInArea(haystack, templ, area, tplMean, tplInvStd);
-    best.scale = 1.0f;
-    return best;
+    // TM_CCOEFF_NORMED scores are in [-1, 1]; 1.0 == perfect match.
+    cv::Mat result;
+    cv::matchTemplate(roi, tplGray, result, cv::TM_CCOEFF_NORMED);
+
+    double    maxVal{};
+    cv::Point maxLoc{};
+    cv::minMaxLoc(result, nullptr, &maxVal, nullptr, &maxLoc);
+
+    MatchResult mr;
+    mr.x     = maxLoc.x + roiOffset.x;
+    mr.y     = maxLoc.y + roiOffset.y;
+    mr.score = static_cast<float>(maxVal);
+    mr.scale = 1.0f;
+    return mr;
 }
 
 std::optional<MatchResult> matchMultiScale(
