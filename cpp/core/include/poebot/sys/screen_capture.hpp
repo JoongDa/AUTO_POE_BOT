@@ -49,4 +49,11 @@ VirtualScreenRect virtualScreenRect();
 
 std::optional<CapturedImage> captureVirtualScreen();
 
+// Capture only the primary monitor (SM_CXSCREEN × SM_CYSCREEN). The result's
+// (0, 0) is the Win32 screen origin, so back-projected coordinates map
+// directly to GetCursorPos / Window Spy "Screen" values on the primary
+// display. Use this for debug / no-game captures where you want coords that
+// are immediately recognisable without a multi-monitor offset.
+std::optional<CapturedImage> capturePrimaryScreen();
+
 }  // namespace poebot::sys

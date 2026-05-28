@@ -113,6 +113,8 @@ int App::run(HINSTANCE hInstance, int nCmdShow) {
     panelCtx_.gameWindow   = &gameWindow_;
     panelCtx_.capture      = &capture_;
     panelCtx_.taskRunner   = &taskRunner_;
+    panelCtx_.templates    = &templateLib_;
+    panelCtx_.d3dDevice   = backend_.device();
     panelCtx_.hotkeys      = &settings_.hotkeys;
     panelCtx_.onAppearanceChanged = [this]() { applyAppearance(); };
     panelCtx_.onRebindHotkey = [this](const std::string& id,
@@ -266,6 +268,21 @@ void App::onActiveProfileChanged() {
         };
         bindFirstAndLoad(prof->craft.affixLibrary, prof->craft.affixes, craftDir);
         bindFirstAndLoad(prof->map.affixLibrary,   prof->map.affixes,   mapDir);
+    }
+
+    // Each profile ships its own set of CV templates (POE1 and POE2 UI assets
+    // are different). Reload whenever the active profile changes — cheap scan
+    // of a small directory, so no throttle is needed. Uses the per-profile
+    // layout: <exe>/<profileName>/templates/*.png
+    // load() creates the directory if absent and returns false on empty/error,
+    // so no separate ensureAffixLibraryDir call is needed here.
+    const auto tplDir = settingsRoot_ / name / "templates";
+    if (templateLib_.load(tplDir)) {
+        spdlog::info("templates: {} template(s) loaded from '{}'",
+                     templateLib_.entries().size(), tplDir.string());
+    } else {
+        spdlog::info("templates: directory ready but no templates loaded yet — '{}'",
+                     tplDir.string());
     }
 
     lastActiveProfile_ = name;
@@ -576,6 +593,10 @@ void App::initImGui() {
     io.IniFilename = nullptr;  // all config lives in settings.json
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+    // Allow ImGui windows to be promoted to independent OS windows so the
+    // template-crop modal can fill the whole monitor (see renderCropModal).
+    io.ConfigFlags                 |= ImGuiConfigFlags_ViewportsEnable;
+    io.ConfigViewportsNoTaskBarIcon = true;   // no extra taskbar entry
 
     // Query the per-monitor DPI now that the HWND exists. This is more
     // precise than GetDpiForSystem() when the window lands on a non-primary
@@ -870,6 +891,15 @@ void App::renderFrame() {
     ImGui::Render();
     backend_.beginFrame(clearColor_);
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+
+    // Render any platform windows (e.g. the fullscreen template-crop overlay).
+    // Must happen before backend_.endFrame() (i.e. the main swapchain Present)
+    // so each secondary swapchain is presented in the same vsync interval.
+    if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
+        ImGui::UpdatePlatformWindows();
+        ImGui::RenderPlatformWindowsDefault();
+    }
+
     backend_.endFrame();
 }
 

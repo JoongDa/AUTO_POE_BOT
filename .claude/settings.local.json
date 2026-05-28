@@ -102,7 +102,13 @@
       "Bash(Select-Object -ExpandProperty FullName)",
       "Bash(find \"/c/Program Files/OpenCV\" -name \"OpenCVConfig.cmake\" 2>/dev/null)",
       "Bash(git -C \"C:\\\\Code\\\\VS\\\\AHK\\\\.claude\\\\worktrees\\\\hungry-mayer-68698a\" diff --staged)",
-      "Bash(git -C \"C:\\\\Code\\\\VS\\\\AHK\\\\.claude\\\\worktrees\\\\hungry-mayer-68698a\" diff)"
+      "Bash(git -C \"C:\\\\Code\\\\VS\\\\AHK\\\\.claude\\\\worktrees\\\\hungry-mayer-68698a\" diff)",
+      "Bash(cmake --build cpp/build --config Debug)",
+      "PowerShell(cmake --build cpp/build --config Debug 2>&1)",
+      "Bash(cmd /c \"cd /d C:\\\\Code\\\\VS\\\\AHK\\\\.claude\\\\worktrees\\\\hungry-mayer-68698a && cpp\\\\scripts\\\\dev-shell.bat cmake --build cpp/build --config Debug 2>&1\")",
+      "Bash(cmd /c \"\\\\\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvars64.bat\\\\\" && cmake --build C:\\\\Code\\\\VS\\\\AHK\\\\.claude\\\\worktrees\\\\hungry-mayer-68698a\\\\cpp\\\\build --config Debug\")",
+      "PowerShell($vsdev = \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\Common7\\\\Tools\\\\VsDevCmd.bat\"; $workdir = \"C:\\\\Code\\\\VS\\\\AHK\\\\.claude\\\\worktrees\\\\hungry-mayer-68698a\"; $buildDir = \"$workdir\\\\cpp\\\\build\"; $result = cmd /c \"`\"$vsdev`\" -arch=x64 -no_logo && cmake --build `\"$buildDir`\" --config Debug 2>&1\"; $result)",
+      "PowerShell($vsdev = \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Professional\\\\Common7\\\\Tools\\\\VsDevCmd.bat\"; $buildDir = \"C:\\\\Code\\\\VS\\\\AHK\\\\.claude\\\\worktrees\\\\hungry-mayer-68698a\\\\cpp\\\\build\"; $result = cmd /c \"`\"$vsdev`\" -arch=x64 -no_logo && cmake --build `\"$buildDir`\" --config Debug 2>&1\"; $result | Select-Object -Last 5 | ForEach-Object { $_ })"
     ]
   }
 }

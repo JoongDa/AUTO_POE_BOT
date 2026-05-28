@@ -7,8 +7,9 @@
 #include <functional>
 #include <string>
 
-namespace poebot::win  { class GameWindow; }
-namespace poebot::task { class TaskRunner; }
+namespace poebot::win    { class GameWindow; }
+namespace poebot::task   { class TaskRunner; }
+namespace poebot::vision { class TemplateLibrary; }
 
 namespace poebot::gui {
 
@@ -40,6 +41,16 @@ struct PanelContext {
 
     // Phase 3.2 — task engine
     poebot::task::TaskRunner*      taskRunner = nullptr;
+
+    // CV template pool loaded once at app startup from <exe>/templates/.
+    // Shared (read-only) across panels; ConfigPanel uses it to drive the
+    // Auto Calibrate tab.
+    const poebot::vision::TemplateLibrary* templates = nullptr;
+
+    // D3D11 device for panels that need to create GPU resources (e.g. the
+    // template-crop modal's screenshot texture). Exposed as void* so that
+    // panel.hpp stays free of d3d11.h; callers cast to ID3D11Device*.
+    void* d3dDevice = nullptr;
 
     // Name of the currently selected side-bar panel (matches Panel::name()).
     // main_layout writes this; individual panels read it via ctx only when

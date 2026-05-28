@@ -5,17 +5,131 @@
 #include <poebot/gui/capture_service.hpp>
 #include <poebot/i18n/i18n.hpp>
 #include <poebot/sys/screen_capture.hpp>
+#include <poebot/vision/template_library.hpp>
 #include <poebot/vision/template_match.hpp>
 
 #include <imgui.h>
 #include <spdlog/spdlog.h>
 
+#include <d3d11.h>
+
+#include <algorithm>
+#include <cctype>
+#include <cmath>
 #include <cstdio>
+#include <cstring>
+#include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 namespace poebot::gui::panels {
 
 namespace {
+
+// Create an immutable D3D11 shader-resource-view from raw BGRA pixels.
+// The texture is DXGI_FORMAT_B8G8R8A8_UNORM, matching our CapturedImage
+// layout. Returns nullptr on any D3D failure; caller owns the Release().
+static ID3D11ShaderResourceView* createBGRASRV(ID3D11Device* dev,
+                                               const void*   bgra,
+                                               int w, int h, int stride) {
+    if (!dev || !bgra || w <= 0 || h <= 0) return nullptr;
+
+    D3D11_TEXTURE2D_DESC td{};
+    td.Width              = static_cast<UINT>(w);
+    td.Height             = static_cast<UINT>(h);
+    td.MipLevels          = 1;
+    td.ArraySize          = 1;
+    td.Format             = DXGI_FORMAT_B8G8R8A8_UNORM;
+    td.SampleDesc.Count   = 1;
+    td.Usage              = D3D11_USAGE_IMMUTABLE;
+    td.BindFlags          = D3D11_BIND_SHADER_RESOURCE;
+
+    D3D11_SUBRESOURCE_DATA sr{};
+    sr.pSysMem            = bgra;
+    sr.SysMemPitch        = static_cast<UINT>(stride);
+
+    ID3D11Texture2D* tex = nullptr;
+    if (FAILED(dev->CreateTexture2D(&td, &sr, &tex))) return nullptr;
+
+    D3D11_SHADER_RESOURCE_VIEW_DESC svd{};
+    svd.Format                    = DXGI_FORMAT_B8G8R8A8_UNORM;
+    svd.ViewDimension             = D3D11_SRV_DIMENSION_TEXTURE2D;
+    svd.Texture2D.MipLevels       = 1;
+
+    ID3D11ShaderResourceView* srv = nullptr;
+    const HRESULT hr = dev->CreateShaderResourceView(tex, &svd, &srv);
+    tex->Release();
+    return SUCCEEDED(hr) ? srv : nullptr;
+}
+
+// Return the (pos, size) of the monitor that contains the centre of the main
+// app window. Handles any resolution (1080p / 2K / 4K) and multi-monitor
+// setups. Falls back to the primary monitor, then to the app window itself.
+static std::pair<ImVec2, ImVec2> appMonitorBounds() {
+    const ImGuiPlatformIO& pio = ImGui::GetPlatformIO();
+    const ImGuiViewport*   vp  = ImGui::GetMainViewport();
+
+    // Use the app window centre to pick the right monitor.
+    const ImVec2 centre(vp->Pos.x + vp->Size.x * 0.5f,
+                        vp->Pos.y + vp->Size.y * 0.5f);
+    for (int i = 0; i < pio.Monitors.Size; ++i) {
+        const ImGuiPlatformMonitor& m = pio.Monitors[i];
+        if (centre.x >= m.MainPos.x && centre.x < m.MainPos.x + m.MainSize.x &&
+            centre.y >= m.MainPos.y && centre.y < m.MainPos.y + m.MainSize.y) {
+            return {m.MainPos, m.MainSize};
+        }
+    }
+    // Fall back to the primary monitor entry, or the app window as last resort.
+    if (pio.Monitors.Size > 0)
+        return {pio.Monitors[0].MainPos, pio.Monitors[0].MainSize};
+    return {vp->Pos, vp->Size};
+}
+
+// Estimate the background colour from 2×2 corner clusters, then set A=0 for
+// pixels within `threshold` RGB units of that colour. Used only for display
+// thumbnails — matching always runs on the original unmodified template image.
+static void removeBackground(poebot::vision::ImageBGRA& img,
+                             float threshold = 35.0f) {
+    if (img.width < 4 || img.height < 4 || img.pixels.empty()) return;
+
+    float sumB = 0, sumG = 0, sumR = 0;
+    int   n    = 0;
+    const int W = img.width, H = img.height;
+
+    const auto px = [&](int x, int y) -> const uint8_t* {
+        return img.pixels.data() +
+               static_cast<std::size_t>(y) * img.stride +
+               static_cast<std::size_t>(x) * 4;
+    };
+    for (int dy = 0; dy < 2; ++dy) {
+        for (int dx = 0; dx < 2; ++dx) {
+            const auto add = [&](int x, int y) {
+                const uint8_t* p = px(x, y);
+                sumB += p[0]; sumG += p[1]; sumR += p[2]; ++n;
+            };
+            add(dx,     dy    );
+            add(W-1-dx, dy    );
+            add(dx,     H-1-dy);
+            add(W-1-dx, H-1-dy);
+        }
+    }
+
+    const float bgB = sumB / n, bgG = sumG / n, bgR = sumR / n;
+    const float tSq = threshold * threshold;
+
+    for (int y = 0; y < H; ++y) {
+        uint8_t* row = img.pixels.data() +
+                       static_cast<std::size_t>(y) * img.stride;
+        for (int x = 0; x < W; ++x) {
+            uint8_t* p     = row + static_cast<std::size_t>(x) * 4;
+            const float db = p[0] - bgB;
+            const float dg = p[1] - bgG;
+            const float dr = p[2] - bgR;
+            p[3] = (db*db + dg*dg + dr*dr < tSq) ? 0u : 255u;
+        }
+    }
+}
 
 // Live preview of the modifier stack as the user holds keys down — looks
 // like "Ctrl+Shift+..." so the trailing "..." cues "waiting for the key".
@@ -61,39 +175,42 @@ void ConfigPanel::coordRow(PanelContext& ctx, const char* name,
                            poebot::ClientPoint& p,
                            const int* qty) {
     using poebot::i18n::tr;
+    ImGui::TableNextRow();
     ImGui::PushID(name);
-    ImGui::AlignTextToFramePadding();
 
     const bool armed = ctx.capture && ctx.capture->active() &&
                        ctx.capture->activeName() == name;
-    if (armed) {
+    if (armed)
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.2f, 1.0f, 0.4f, 1.0f));
-    }
 
-    ImGui::Text("%-10s", name);
-    ImGui::SameLine(110.0f);
+    // Col 0: coord name
+    ImGui::TableNextColumn();
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(name);
+
+    // Col 1: captured value + optional qty
+    ImGui::TableNextColumn();
     if (poebot::isUnset(p)) {
         ImGui::TextDisabled("%s", tr("config.unset"));
     } else {
         ImGui::Text("(%d, %d)", p.x, p.y);
         if (qty) {
-            ImGui::SameLine(200.0f);
+            ImGui::SameLine();
             if (*qty >= 0) ImGui::TextDisabled("x%d", *qty);
             else           ImGui::TextDisabled("x?");
         }
     }
+
     if (armed) ImGui::PopStyleColor();
 
-    // Compose "capture.<name>" once — used both for the displayed
-    // binding label and for the rebind target if the user clicks.
+    // Col 2: rebind button labeled with the live binding
+    ImGui::TableNextColumn();
     char actionId[32];
     std::snprintf(actionId, sizeof(actionId), "capture.%s", name);
     const std::string label = bindingLabel(ctx, actionId);
-
-    ImGui::SameLine(250.0f);
-    if (ImGui::SmallButton(label.c_str())) {
+    if (ImGui::SmallButton(label.c_str()))
         requestRebind(actionId);
-    }
+
     ImGui::PopID();
 }
 
@@ -138,26 +255,32 @@ void ConfigPanel::render(PanelContext& ctx) {
         if (ImGui::BeginTabItem(tr("settings.tab.hotkeys"))) {
             ImGui::Spacing();
 
-            for (const auto& a : poebot::hotkey::allHotkeyActions()) {
-                const std::string_view id{a.id};
-                if (id.rfind("capture.", 0) == 0) continue;  // shown in tab 2
+            ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(4.0f, 1.0f));
+            if (ImGui::BeginTable("##hotkeys", 2,
+                                  ImGuiTableFlags_NoSavedSettings |
+                                  ImGuiTableFlags_SizingFixedFit)) {
+                ImGui::TableSetupColumn("##hlabel", ImGuiTableColumnFlags_WidthFixed,   0.0f);
+                ImGui::TableSetupColumn("##hbtn",   ImGuiTableColumnFlags_WidthStretch);
 
-                ImGui::PushID(a.id);
-                ImGui::AlignTextToFramePadding();
-                ImGui::Text("%s", tr(a.labelKey));
-                ImGui::SameLine(220.0f);
-                const std::string label = bindingLabel(ctx, a.id);
-                if (ImGui::SmallButton(label.c_str())) {
-                    requestRebind(a.id);
+                for (const auto& a : poebot::hotkey::allHotkeyActions()) {
+                    if (std::string_view(a.id).rfind("capture.", 0) == 0) continue;
+                    ImGui::TableNextRow();
+                    ImGui::PushID(a.id);
+                    ImGui::TableNextColumn();
+                    ImGui::AlignTextToFramePadding();
+                    ImGui::TextUnformatted(tr(a.labelKey));
+                    ImGui::TableNextColumn();
+                    const std::string label = bindingLabel(ctx, a.id);
+                    if (ImGui::SmallButton(label.c_str()))
+                        requestRebind(a.id);
+                    ImGui::PopID();
                 }
-                ImGui::PopID();
+
+                ImGui::EndTable();
             }
+            ImGui::PopStyleVar();
 
             ImGui::Spacing();
-            // Reset only the actions this tab shows — the nine capture.*
-            // hotkeys are owned by the Coordinates tab now, so resetting
-            // them here would silently churn buttons the user can't even
-            // see. The same capture.* filter as the row loop above.
             if (ImGui::SmallButton(tr("settings.hotkeys.reset_all"))) {
                 if (ctx.onRebindHotkey) {
                     for (const auto& a : poebot::hotkey::allHotkeyActions()) {
@@ -178,37 +301,50 @@ void ConfigPanel::render(PanelContext& ctx) {
         // bound hotkey in-game — there's no manual-trigger button now.
         if (ImGui::BeginTabItem(tr("settings.tab.coords"))) {
             ImGui::Spacing();
-
-            // Coord rows don't need to accumulate a dirty flag —
-            // CaptureService marks panelCtx_.dirty when a capture commits.
             auto& c = prof->coords;
 
-            ImGui::TextUnformatted(tr("config.section.orbs"));
-            coordRow(ctx, "orb1",     c.orb1, &c.orb1Qty);
-            coordRow(ctx, "orb2",     c.orb2, &c.orb2Qty);
-            coordRow(ctx, "orb3",     c.orb3, &c.orb3Qty);
+            ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(4.0f, 1.0f));
+            if (ImGui::BeginTable("##coords", 3,
+                                  ImGuiTableFlags_NoSavedSettings |
+                                  ImGuiTableFlags_SizingFixedFit)) {
+                ImGui::TableSetupColumn("##cname", ImGuiTableColumnFlags_WidthFixed,   0.0f);
+                ImGui::TableSetupColumn("##cval",  ImGuiTableColumnFlags_WidthFixed,   0.0f);
+                ImGui::TableSetupColumn("##cbtn",  ImGuiTableColumnFlags_WidthStretch);
 
-            ImGui::Spacing();
-            ImGui::TextUnformatted(tr("config.section.anchors"));
-            coordRow(ctx, "baseItem", c.baseItem);
-            coordRow(ctx, "p01Item",  c.p01Item);
-            coordRow(ctx, "p10Item",  c.p10Item);
+                // Section header row: text in col 0, other cols left empty.
+                const auto sectionRow = [](const char* label) {
+                    ImGui::TableNextRow();
+                    ImGui::TableNextColumn();
+                    ImGui::Spacing();
+                    ImGui::TextUnformatted(label);
+                    ImGui::TableNextColumn();
+                    ImGui::TableNextColumn();
+                };
 
-            ImGui::Spacing();
-            ImGui::TextUnformatted(tr("config.section.inventory"));
-            coordRow(ctx, "invBase",  c.invBase);
-            coordRow(ctx, "invP01",   c.invP01);
-            coordRow(ctx, "invP10",   c.invP10);
+                sectionRow(tr("config.section.orbs"));
+                coordRow(ctx, "orb1",     c.orb1, &c.orb1Qty);
+                coordRow(ctx, "orb2",     c.orb2, &c.orb2Qty);
+                coordRow(ctx, "orb3",     c.orb3, &c.orb3Qty);
 
-            // Reset profile — wipes coords + craft/map/deposit/stats. The
-            // confirm modal stops misclicks; auto-save means we don't ship
-            // an explicit Save button anywhere on this page.
+                sectionRow(tr("config.section.anchors"));
+                coordRow(ctx, "baseItem", c.baseItem);
+                coordRow(ctx, "p01Item",  c.p01Item);
+                coordRow(ctx, "p10Item",  c.p10Item);
+
+                sectionRow(tr("config.section.inventory"));
+                coordRow(ctx, "invBase",  c.invBase);
+                coordRow(ctx, "invP01",   c.invP01);
+                coordRow(ctx, "invP10",   c.invP10);
+
+                ImGui::EndTable();
+            }
+            ImGui::PopStyleVar();
+
             ImGui::Spacing();
             ImGui::Separator();
             ImGui::Spacing();
-            if (ImGui::Button(tr("config.button.reset_profile"))) {
+            if (ImGui::Button(tr("config.button.reset_profile")))
                 requestResetConfirm = true;
-            }
 
             ImGui::EndTabItem();
         }
@@ -314,6 +450,10 @@ void ConfigPanel::render(PanelContext& ctx) {
         rebindError_.clear();
     }
 
+    // Template crop modal — driven by cropState_.active (set inside the Auto
+    // Calibrate tab when the user clicks a template name button).
+    renderCropModal(ctx);
+
     // Reset-profile confirm — fires when the Coords tab requested it this frame.
     if (requestResetConfirm) {
         ImGui::OpenPopup("##ResetConfirm");
@@ -363,88 +503,223 @@ void ConfigPanel::render(PanelContext& ctx) {
 
 // ============================================================
 // Auto-calibrate tab
+//
+// Renders the read-only view of the template pool and the per-profile
+// `calibrated` coord pool. Each template = one entry in the pool when
+// matched 0 or 1 times; multi-match templates expand to N rows whose
+// keys are "<basename>_1" … "<basename>_N".
+//
+// The actual matching is in runAutoCalibrate(). Wider design notes are
+// in the conversation history; the short version:
+//   - templates live in <exe>/templates/<name>.png and are loaded once
+//     at app startup (App owns the library, this panel borrows it)
+//   - results are written into prof->calibrated and persisted to JSON
+//   - the existing ProfileCoords (orb1, baseItem, …) are unrelated and
+//     remain owned by the Coordinates tab
 // ============================================================
+
+namespace {
+
+// Match threshold and instance cap shared between renderAutoCalibrate
+// and runAutoCalibrate. Tuned by feel; expose to UI later if needed.
+constexpr float kMinMatchScore = 0.95f;
+constexpr int   kMaxInstances  = 10;
+constexpr int   kTargetW       = 1920;
+constexpr int   kTargetH       = 1080;
+
+// Decide whether a calibrated entry key belongs to the named template.
+// Single-match entries are stored under the bare basename; multi-match
+// entries get "_N" suffixes ("chaos_1", "chaos_2", …). Both are
+// considered part of the "chaos" group.
+//
+// Be strict about the suffix shape ("_<digits>") so that a template
+// named "orb" doesn't accidentally claim entries from "orb_currency_1".
+bool keyBelongsTo(const std::string& key, const std::string& templateName) {
+    if (key == templateName) return true;
+    if (key.size() <= templateName.size() + 1) return false;
+    if (key.compare(0, templateName.size(), templateName) != 0) return false;
+    if (key[templateName.size()] != '_') return false;
+    for (std::size_t i = templateName.size() + 1; i < key.size(); ++i) {
+        if (!std::isdigit(static_cast<unsigned char>(key[i]))) return false;
+    }
+    return true;
+}
+
+// Pull every calibrated entry that belongs to a template, in key order
+// so the UI shows _1 before _2 before _3.
+std::vector<const std::pair<const std::string, poebot::config::CalibratedCoord>*>
+groupedEntries(const poebot::config::GameProfile& prof, const std::string& templateName) {
+    std::vector<const std::pair<const std::string, poebot::config::CalibratedCoord>*> out;
+    for (const auto& kv : prof.calibrated) {
+        if (keyBelongsTo(kv.first, templateName)) out.push_back(&kv);
+    }
+    std::sort(out.begin(), out.end(),
+              [](auto a, auto b) { return a->first < b->first; });
+    return out;
+}
+
+}  // namespace
 
 void ConfigPanel::renderAutoCalibrate(PanelContext& ctx) {
     using poebot::i18n::tr;
 
-    // Lazy-load templates the first time this tab is rendered.
-    if (!templatesLoaded_ && ctx.settingsRoot) {
-        templateLib_.load(*ctx.settingsRoot / "templates");
-        templatesLoaded_ = true;
-    }
+    const auto* lib = ctx.templates;
 
-    // Directory path + reload button on the same line.
-    if (ctx.settingsRoot) {
-        const auto dir = *ctx.settingsRoot / "templates";
-        ImGui::TextDisabled("%s", dir.string().c_str());
+    // Rebuild thumbnail SRV cache whenever the library pointer changes
+    // (profile switch or Reload).
+    if (lib != cachedTemplLib_) rebuildTemplThumbs(ctx);
+
+    // Header: templates directory path only (Reload button moved to the
+    // action row at the bottom alongside Start Calibrate).
+    if (lib && !lib->dir().empty()) {
+        ImGui::TextDisabled("%s", lib->dir().string().c_str());
+    } else if (ctx.settingsRoot) {
+        ImGui::TextDisabled("%s", (*ctx.settingsRoot / "templates").string().c_str());
     } else {
         ImGui::TextDisabled("templates/");
     }
-    ImGui::SameLine();
-    if (ImGui::SmallButton(tr("auto_cal.load"))) {
-        if (ctx.settingsRoot) {
-            templateLib_.load(*ctx.settingsRoot / "templates");
-            calibStatus_.clear();
-        }
-    }
     ImGui::Spacing();
 
-    if (!templateLib_.anyLoaded()) {
-        ImGui::TextDisabled("%s", tr("auto_cal.no_templates"));
+    if (!lib || !lib->anyLoaded()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.55f, 0.35f, 1.0f));
+        ImGui::TextWrapped("%s", tr("auto_cal.no_templates"));
+        ImGui::PopStyleColor();
         ImGui::Spacing();
     }
 
-    // Per-template rows: name | current coord | Manual button
     auto* prof = ctx.settings ? ctx.settings->active() : nullptr;
-    for (const auto& entry : templateLib_.entries()) {
-        ImGui::PushID(entry.coordName.c_str());
-        ImGui::AlignTextToFramePadding();
 
-        // Column 1: coord name
-        ImGui::Text("%-10s", entry.coordName.c_str());
-        ImGui::SameLine(110.0f);
+    if (lib && prof) {
+        const float iconSz = ImGui::GetTextLineHeight();
 
-        // Column 2: current value
-        if (!entry.loaded) {
-            ImGui::TextDisabled("%s", tr("auto_cal.template_missing"));
-        } else if (prof) {
-            const auto* coord = poebot::config::findCoordByName(*prof, entry.coordName);
-            if (!coord || poebot::isUnset(*coord)) {
-                ImGui::TextDisabled("%s", tr("config.unset"));
-            } else {
-                ImGui::Text("(%d, %d)", coord->x, coord->y);
+        // 4-column table: [icon | name/key | coord | qty+score]
+        // CellPadding y=1 keeps rows tight; SizingFixedFit prevents columns
+        // from stretching beyond their content (except the last one).
+        ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(4.0f, 1.0f));
+        if (ImGui::BeginTable("##templ_list", 4,
+                              ImGuiTableFlags_NoSavedSettings |
+                              ImGuiTableFlags_SizingFixedFit)) {
+            ImGui::TableSetupColumn("##icon",  ImGuiTableColumnFlags_WidthFixed,  iconSz + 4.0f);
+            ImGui::TableSetupColumn("##name",  ImGuiTableColumnFlags_WidthFixed,  0.0f);
+            ImGui::TableSetupColumn("##coord", ImGuiTableColumnFlags_WidthFixed,  0.0f);
+            ImGui::TableSetupColumn("##info",  ImGuiTableColumnFlags_WidthStretch);
+
+            std::size_t thumbIdx = 0;
+            for (const auto& tmpl : lib->entries()) {
+                ImGui::PushID(tmpl.name.c_str());
+                const void* srv = thumbIdx < templThumbSRVs_.size()
+                                  ? templThumbSRVs_[thumbIdx] : nullptr;
+                ++thumbIdx;
+
+                // Collect matches; empty for unloaded templates.
+                decltype(groupedEntries(*prof, tmpl.name)) group;
+                if (tmpl.loaded) group = groupedEntries(*prof, tmpl.name);
+                const int rowCount = std::max(1, static_cast<int>(group.size()));
+
+                for (int i = 0; i < rowCount; ++i) {
+                    ImGui::TableNextRow();
+
+                    // Col 0: thumbnail (first row only)
+                    ImGui::TableNextColumn();
+                    if (i == 0) {
+                        if (srv)
+                            ImGui::Image(reinterpret_cast<ImTextureID>(srv),
+                                         ImVec2(iconSz, iconSz));
+                        else
+                            ImGui::Dummy(ImVec2(iconSz, iconSz));
+                    }
+
+                    // Col 1: name button (row 0) or key label (rows 1+)
+                    ImGui::TableNextColumn();
+                    if (i == 0) {
+                        if (ImGui::SmallButton(tmpl.name.c_str())) {
+                            closeCropModal();
+                            cropState_.templateName = tmpl.name;
+                            const bool hasGame = ctx.gameWindow && ctx.gameWindow->valid();
+                            std::optional<poebot::sys::CapturedImage> capOpt = hasGame
+                                ? poebot::sys::captureClient(ctx.gameWindow->hwnd())
+                                : poebot::sys::capturePrimaryScreen();
+                            if (capOpt && !capOpt->pixels.empty()) {
+                                auto img = poebot::vision::ImageBGRA::fromCaptured(
+                                               std::move(*capOpt));
+                                if (img.width != kTargetW || img.height != kTargetH)
+                                    img = poebot::vision::resize(img, kTargetW, kTargetH);
+                                if (!img.pixels.empty()) {
+                                    cropState_.scrW      = img.width;
+                                    cropState_.scrH      = img.height;
+                                    cropState_.scrStride = img.stride;
+                                    cropState_.pixels    = std::move(img.pixels);
+                                    cropState_.active    = true;
+                                }
+                            }
+                        }
+                    } else {
+                        ImGui::AlignTextToFramePadding();
+                        ImGui::TextDisabled("%s", group[static_cast<std::size_t>(i)]->first.c_str());
+                    }
+
+                    // Col 2: coordinates / error / unset
+                    ImGui::TableNextColumn();
+                    if (!tmpl.loaded) {
+                        ImGui::PushStyleColor(ImGuiCol_Text,
+                                              ImVec4(1.0f, 0.42f, 0.42f, 1.0f));
+                        ImGui::TextUnformatted(tr("auto_cal.template_missing"));
+                        ImGui::PopStyleColor();
+                    } else if (group.empty()) {
+                        ImGui::TextDisabled("%s", tr("config.unset"));
+                    } else {
+                        const auto& cal = group[static_cast<std::size_t>(i)]->second;
+                        ImGui::Text("(%d, %d)", cal.pos.x, cal.pos.y);
+                    }
+
+                    // Col 3: qty + score
+                    ImGui::TableNextColumn();
+                    if (tmpl.loaded && group.empty()) {
+                        ImGui::TextDisabled("qty —");
+                    } else if (tmpl.loaded) {
+                        const auto& cal = group[static_cast<std::size_t>(i)]->second;
+                        ImGui::TextDisabled("qty %d", cal.qty);
+                        if (cal.score > 0.0f) {
+                            ImGui::SameLine();
+                            ImGui::TextDisabled("· %.2f", cal.score);
+                        }
+                    }
+                }
+
+                ImGui::PopID();
             }
-        } else {
-            ImGui::TextDisabled("%s", tr("config.unset"));
-        }
 
-        // Column 3: Manual capture button (3-second countdown via CaptureService)
-        ImGui::SameLine(220.0f);
-        if (ImGui::SmallButton(tr("auto_cal.manual"))) {
-            if (ctx.capture) {
-                ctx.capture->startCapture(entry.coordName);
-            }
+            ImGui::EndTable();
         }
-
-        ImGui::PopID();
+        ImGui::PopStyleVar();
     }
 
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
 
-    // "Start Auto Calibrate" — disabled when the game window is absent or
-    // no templates are loaded (nothing to match against).
-    const bool canStart =
-        templateLib_.anyLoaded() &&
-        ctx.gameWindow && ctx.gameWindow->valid();
+    // Require only that templates are loaded — the game window is optional.
+    // When no game window is found the runner falls back to a full virtual-
+    // screen capture so the feature stays usable in debug / headless sessions.
+    const bool canStart = lib && lib->anyLoaded();
 
     if (!canStart) ImGui::BeginDisabled();
     if (ImGui::Button(tr("auto_cal.start"))) {
         runAutoCalibrate(ctx);
     }
     if (!canStart) ImGui::EndDisabled();
+
+    ImGui::SameLine();
+    if (ImGui::Button(tr("auto_cal.load"))) {
+        // The library is owned by App and exposed read-only through ctx, so
+        // the panel can't mutate it directly. The const_cast here is the
+        // pragmatic escape hatch: nothing else writes the library and the
+        // single thread invariant holds (this is the UI thread).
+        if (auto* mut = const_cast<poebot::vision::TemplateLibrary*>(lib)) {
+            mut->reload();
+            calibStatus_.clear();
+        }
+    }
 
     if (!calibStatus_.empty()) {
         ImGui::SameLine();
@@ -457,17 +732,26 @@ void ConfigPanel::runAutoCalibrate(PanelContext& ctx) {
 
     calibStatus_.clear();
 
-    // Pre-conditions
-    if (!ctx.gameWindow || !ctx.gameWindow->valid()) {
-        calibStatus_ = tr("auto_cal.err_no_game");
-        return;
-    }
     auto* prof = ctx.settings ? ctx.settings->active() : nullptr;
-    if (!prof) return;
+    if (!prof || !ctx.templates) return;
 
-    // 1. Capture the game client area via BitBlt.
-    const HWND hwnd = ctx.gameWindow->hwnd();
-    auto capOpt = poebot::sys::captureClient(hwnd);
+    // 1. Capture: prefer the game client area (client-space coords); fall back
+    //    to the full virtual screen when no game window is present so the
+    //    feature stays usable during debug without the game running.
+    const bool hasGame = ctx.gameWindow && ctx.gameWindow->valid();
+    std::optional<poebot::sys::CapturedImage> capOpt;
+    if (hasGame) {
+        capOpt = poebot::sys::captureClient(ctx.gameWindow->hwnd());
+        spdlog::info("auto_cal: capturing game client area");
+    } else {
+        // Debug fallback: primary screen only (not the full virtual desktop).
+        // SM_CXSCREEN × SM_CYSCREEN gives the primary monitor dimensions, so
+        // back-projected coordinates land in (0..SM_CXSCREEN, 0..SM_CYSCREEN)
+        // and match Win32 Screen coordinates directly — easily verified with
+        // any spy tool without accounting for multi-monitor offsets.
+        capOpt = poebot::sys::capturePrimaryScreen();
+        spdlog::info("auto_cal: no game window — capturing primary screen (debug)");
+    }
     if (!capOpt) {
         calibStatus_ = tr("auto_cal.err_capture");
         return;
@@ -478,10 +762,8 @@ void ConfigPanel::runAutoCalibrate(PanelContext& ctx) {
     // 2. Wrap as ImageBGRA (zero-copy move of the pixel buffer).
     auto haystack = poebot::vision::ImageBGRA::fromCaptured(std::move(*capOpt));
 
-    // 3. Normalize to 1920×1080. Templates are authored at this resolution so
-    //    the same set works for 1080p, 1440p, and 4K game windows.
-    constexpr int kTargetW = 1920;
-    constexpr int kTargetH = 1080;
+    // 3. Normalize to 1920×1080. Templates are authored at this resolution
+    //    so one set works across 1080p / 1440p / 4K game windows.
     if (haystack.width != kTargetW || haystack.height != kTargetH) {
         haystack = poebot::vision::resize(haystack, kTargetW, kTargetH);
     }
@@ -490,46 +772,334 @@ void ConfigPanel::runAutoCalibrate(PanelContext& ctx) {
         return;
     }
 
-    // 4. Match each loaded template; threshold at 0.70 (TM_CCOEFF_NORMED).
-    constexpr float kMinScore = 0.70f;
-    int updated = 0;
-
-    for (const auto& entry : templateLib_.entries()) {
-        if (!entry.loaded) continue;
-
-        const auto res = poebot::vision::match(haystack, entry.image);
-        if (!res || res->score < kMinScore) {
-            spdlog::debug("auto_cal: '{}' no match (score={:.2f})",
-                          entry.coordName, res ? res->score : 0.0f);
-            continue;
-        }
-
-        // Convert match top-left to template center in 1080p space, then
-        // back-project to actual client coordinates.
-        const float cx1080 = static_cast<float>(res->x) + entry.image.width  * 0.5f;
-        const float cy1080 = static_cast<float>(res->y) + entry.image.height * 0.5f;
-        const int   clientX = static_cast<int>(cx1080 * captureW / kTargetW);
-        const int   clientY = static_cast<int>(cy1080 * captureH / kTargetH);
-
-        auto* coord = poebot::config::findCoordByName(*prof, entry.coordName);
-        if (coord) {
-            coord->x = clientX;
-            coord->y = clientY;
-            ++updated;
-            spdlog::info("auto_cal: '{}' → ({}, {})  score={:.2f}",
-                         entry.coordName, clientX, clientY, res->score);
+    // 4. Wipe any prior entries for templates we're about to re-match. We
+    //    do NOT clear entries for templates that aren't loaded right now
+    //    — those might just be missing temporarily and the user shouldn't
+    //    lose their previous calibration over it.
+    auto& cal = prof->calibrated;
+    for (const auto& tmpl : ctx.templates->entries()) {
+        if (!tmpl.loaded) continue;
+        for (auto it = cal.begin(); it != cal.end();) {
+            if (keyBelongsTo(it->first, tmpl.name)) {
+                it = cal.erase(it);
+            } else {
+                ++it;
+            }
         }
     }
 
-    // 5. Persist and report.
-    if (updated > 0) {
+    // 5. Match each template (multi-instance, NMS-deduplicated) and
+    //    record one entry per match.
+    int totalMatches    = 0;
+    int touchedTemplates = 0;
+    for (const auto& tmpl : ctx.templates->entries()) {
+        if (!tmpl.loaded) continue;
+
+        // Template can't be larger than haystack — resize() handles the
+        // common 4K/1440p → 1080p case but small game windows might still
+        // produce a too-small haystack. matchAll handles this by returning
+        // an empty vector, so just skip on empty result.
+        const auto matches = poebot::vision::matchAll(
+            haystack, tmpl.image, kMinMatchScore, kMaxInstances);
+        if (matches.empty()) {
+            spdlog::debug("auto_cal: '{}' no match above {:.2f}",
+                          tmpl.name, kMinMatchScore);
+            continue;
+        }
+
+        ++touchedTemplates;
+        const int qty = static_cast<int>(matches.size());
+
+        for (std::size_t i = 0; i < matches.size(); ++i) {
+            const auto& m = matches[i];
+
+            // m.x/m.y is already the template centre in 1080p coords.
+            // Back-project to actual client coords (captureW × captureH).
+            poebot::config::CalibratedCoord c;
+            c.pos.x = static_cast<int>(m.x * captureW / kTargetW);
+            c.pos.y = static_cast<int>(m.y * captureH / kTargetH);
+            c.qty   = qty;      // group count — identical across the group
+            c.score = m.score;
+
+            // Key: bare basename when only one match, "<basename>_N" when many.
+            std::string key = tmpl.name;
+            if (matches.size() > 1) {
+                key += "_";
+                key += std::to_string(i + 1);
+            }
+
+            spdlog::info("auto_cal: '{}' -> ({}, {})  score={:.2f}  qty={}",
+                         key, c.pos.x, c.pos.y, c.score, c.qty);
+            cal.emplace(std::move(key), c);
+            ++totalMatches;
+        }
+    }
+
+    // 6. Persist and report.
+    if (totalMatches > 0) {
         ctx.dirty = true;
         char buf[128];
-        std::snprintf(buf, sizeof(buf), tr("auto_cal.done_fmt"), updated);
+        std::snprintf(buf, sizeof(buf), tr("auto_cal.done_fmt"),
+                      totalMatches, touchedTemplates);
         calibStatus_ = buf;
     } else {
         calibStatus_ = tr("auto_cal.no_match");
     }
+}
+
+// ============================================================
+// Template thumbnail SRV cache
+// ============================================================
+
+ConfigPanel::~ConfigPanel() {
+    releaseTemplThumbs();
+}
+
+void ConfigPanel::releaseTemplThumbs() {
+    for (void* srv : templThumbSRVs_) {
+        if (srv) static_cast<ID3D11ShaderResourceView*>(srv)->Release();
+    }
+    templThumbSRVs_.clear();
+    cachedTemplLib_ = nullptr;
+}
+
+void ConfigPanel::rebuildTemplThumbs(PanelContext& ctx) {
+    releaseTemplThumbs();
+    const auto* lib = ctx.templates;
+    if (!lib || !ctx.d3dDevice) return;
+    auto* dev = static_cast<ID3D11Device*>(ctx.d3dDevice);
+    templThumbSRVs_.reserve(lib->entries().size());
+    for (const auto& tmpl : lib->entries()) {
+        void* srv = nullptr;
+        if (tmpl.loaded) {
+            // Display copy: background removed so the thumbnail shows only the
+            // item outline. The original tmpl.image is untouched — matching
+            // always runs on the full unprocessed image.
+            poebot::vision::ImageBGRA disp = tmpl.image;
+            removeBackground(disp);
+            srv = createBGRASRV(dev,
+                                disp.pixels.data(),
+                                disp.width,
+                                disp.height,
+                                disp.stride);
+        }
+        templThumbSRVs_.push_back(srv);
+    }
+    cachedTemplLib_ = lib;
+}
+
+// ============================================================
+// Template crop modal
+//
+// Opened when the user clicks a template name button. Captures the current
+// screen (primary monitor or game client), normalizes to 1920×1080 so
+// templates are always authored at the same scale, and lets the user
+// drag-select a region. On confirm the region is PNG-encoded and written
+// to the template directory (atomic), then the library reloads.
+// ============================================================
+
+void ConfigPanel::closeCropModal() {
+    if (cropState_.texSRV) {
+        static_cast<ID3D11ShaderResourceView*>(cropState_.texSRV)->Release();
+    }
+    cropState_ = {};
+}
+
+void ConfigPanel::saveCroppedTemplate(PanelContext& ctx) {
+    const float scale = cropState_.dispScale;
+    if (scale <= 0.0f || cropState_.scrW <= 0) return;
+
+    // Map display-space selection back to 1920×1080 pixel coords.
+    const float dax = std::min(cropState_.selAx, cropState_.selBx);
+    const float day = std::min(cropState_.selAy, cropState_.selBy);
+    const float dbx = std::max(cropState_.selAx, cropState_.selBx);
+    const float dby = std::max(cropState_.selAy, cropState_.selBy);
+
+    const int sx = static_cast<int>(dax / scale);
+    const int sy = static_cast<int>(day / scale);
+    const int sw = static_cast<int>((dbx - dax) / scale);
+    const int sh = static_cast<int>((dby - day) / scale);
+
+    // Clamp to image bounds.
+    const int cx = std::clamp(sx, 0, cropState_.scrW - 1);
+    const int cy = std::clamp(sy, 0, cropState_.scrH - 1);
+    const int cw = std::clamp(sw, 1, cropState_.scrW - cx);
+    const int ch = std::clamp(sh, 1, cropState_.scrH - cy);
+
+    // Copy the selected region into a new ImageBGRA.
+    poebot::vision::ImageBGRA cropped;
+    cropped.width  = cw;
+    cropped.height = ch;
+    cropped.stride = cw * 4;
+    cropped.pixels.resize(static_cast<std::size_t>(cw) * ch * 4);
+
+    for (int row = 0; row < ch; ++row) {
+        const uint8_t* src = cropState_.pixels.data() +
+                             static_cast<std::size_t>(cy + row) * cropState_.scrStride +
+                             static_cast<std::size_t>(cx) * 4;
+        uint8_t* dst = cropped.pixels.data() +
+                       static_cast<std::size_t>(row) * cropped.stride;
+        std::memcpy(dst, src, static_cast<std::size_t>(cw) * 4);
+    }
+
+    if (auto* lib = const_cast<poebot::vision::TemplateLibrary*>(ctx.templates)) {
+        lib->replaceTemplate(cropState_.templateName, cropped);
+    }
+}
+
+void ConfigPanel::renderCropModal(PanelContext& ctx) {
+    using poebot::i18n::tr;
+    if (!cropState_.active) return;
+
+    // Promote this window to its own OS window so it can cover the full
+    // monitor independent of where the app window sits.
+    // ImGuiConfigFlags_ViewportsEnable must be set (done in App::initImGui).
+    ImGuiWindowClass wc{};
+    wc.ViewportFlagsOverrideSet = ImGuiViewportFlags_NoAutoMerge
+                                | ImGuiViewportFlags_NoDecoration
+                                | ImGuiViewportFlags_NoTaskBarIcon;
+    ImGui::SetNextWindowClass(&wc);
+
+    // Cover the full monitor that currently hosts the app window.
+    // appMonitorBounds() queries ImGui's platform monitor list so this adapts
+    // automatically to any resolution (1080p / 2K / 4K) and multi-monitor
+    // setups — no hardcoded pixel values anywhere.
+    const auto [monPos, monSize] = appMonitorBounds();
+    ImGui::SetNextWindowPos (monPos,  ImGuiCond_Always);
+    ImGui::SetNextWindowSize(monSize, ImGuiCond_Always);
+    ImGui::SetNextWindowBgAlpha(1.0f);
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding,   0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,    ImVec2(12.0f, 12.0f));
+
+    const bool cropOpen = ImGui::Begin("##CropFullscreen", nullptr,
+                                       ImGuiWindowFlags_NoDecoration   |
+                                       ImGuiWindowFlags_NoMove         |
+                                       ImGuiWindowFlags_NoNav          |
+                                       ImGuiWindowFlags_NoSavedSettings);
+    ImGui::PopStyleVar(3);
+
+    if (!cropOpen) {
+        ImGui::End();
+        closeCropModal();
+        return;
+    }
+
+    bool doAutoSave = false;
+    {   // braces keep the former BeginPopupModal indent level unchanged below
+
+        // Lazy: create texture on first frame once pixels are ready.
+        if (!cropState_.texSRV && ctx.d3dDevice && !cropState_.pixels.empty()) {
+            cropState_.texSRV = createBGRASRV(
+                static_cast<ID3D11Device*>(ctx.d3dDevice),
+                cropState_.pixels.data(),
+                cropState_.scrW, cropState_.scrH, cropState_.scrStride);
+        }
+
+        // --- Header ---
+        ImGui::TextUnformatted("Recapture template:");
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(0.2f, 0.7f, 1.0f, 1.0f),
+                           "%s", cropState_.templateName.c_str());
+        ImGui::TextDisabled("Drag to select region — release mouse to save  (normalized to 1920x1080)");
+        ImGui::Spacing();
+
+        // --- Screenshot + selection ---
+        if (cropState_.texSRV && cropState_.scrW > 0) {
+            const float availW = ImGui::GetContentRegionAvail().x;
+            const float scale  = availW / static_cast<float>(cropState_.scrW);
+            const float dispW  = availW;
+            const float dispH  = static_cast<float>(cropState_.scrH) * scale;
+            cropState_.dispScale = scale;
+            cropState_.dispW     = dispW;
+            cropState_.dispH     = dispH;
+
+            const ImVec2 imgPos = ImGui::GetCursorScreenPos();
+
+            // Draw screenshot.
+            ImGui::Image(reinterpret_cast<ImTextureID>(cropState_.texSRV),
+                         ImVec2(dispW, dispH));
+
+            // Invisible button on top captures mouse interaction.
+            ImGui::SetCursorScreenPos(imgPos);
+            ImGui::InvisibleButton("##imgsel", ImVec2(dispW, dispH));
+
+            // Drag-select logic.
+            const ImVec2 mouse = ImGui::GetMousePos();
+            const float  rx    = std::clamp(mouse.x - imgPos.x, 0.0f, dispW);
+            const float  ry    = std::clamp(mouse.y - imgPos.y, 0.0f, dispH);
+
+            if (ImGui::IsItemHovered() &&
+                ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                cropState_.selAx   = rx;
+                cropState_.selAy   = ry;
+                cropState_.selBx   = rx;
+                cropState_.selBy   = ry;
+                cropState_.hasSel  = false;
+            }
+            if (ImGui::IsItemActive()) {
+                cropState_.selBx = rx;
+                cropState_.selBy = ry;
+                if (std::abs(cropState_.selBx - cropState_.selAx) > 2.0f ||
+                    std::abs(cropState_.selBy - cropState_.selAy) > 2.0f) {
+                    cropState_.hasSel = true;
+                }
+            }
+
+            // Auto-save: fire when the mouse is released over a meaningful
+            // selection (>4 px in each axis to avoid accidental single-clicks).
+            if (ImGui::IsItemDeactivated() && cropState_.hasSel &&
+                std::abs(cropState_.selBx - cropState_.selAx) > 4.0f &&
+                std::abs(cropState_.selBy - cropState_.selAy) > 4.0f) {
+                doAutoSave = true;
+            }
+
+            // Draw selection overlay.
+            if (cropState_.hasSel) {
+                const ImVec2 ra(imgPos.x + std::min(cropState_.selAx, cropState_.selBx),
+                                imgPos.y + std::min(cropState_.selAy, cropState_.selBy));
+                const ImVec2 rb(imgPos.x + std::max(cropState_.selAx, cropState_.selBx),
+                                imgPos.y + std::max(cropState_.selAy, cropState_.selBy));
+                ImDrawList* dl = ImGui::GetWindowDrawList();
+                dl->AddRectFilled(ra, rb, IM_COL32(255, 100, 100,  45));
+                dl->AddRect      (ra, rb, IM_COL32(255, 100, 100, 220), 0.0f, 0, 1.5f);
+
+                // Show 1080p-space coords.
+                const int sx = static_cast<int>(std::min(cropState_.selAx, cropState_.selBx) / scale);
+                const int sy = static_cast<int>(std::min(cropState_.selAy, cropState_.selBy) / scale);
+                const int sw = static_cast<int>(std::abs(cropState_.selBx - cropState_.selAx) / scale);
+                const int sh = static_cast<int>(std::abs(cropState_.selBy - cropState_.selAy) / scale);
+                ImGui::TextDisabled("(%d, %d)  %d x %d px  (1080p)", sx, sy, sw, sh);
+            } else {
+                ImGui::TextDisabled(" ");   // keeps layout height stable
+            }
+        } else {
+            ImGui::TextDisabled("Preparing screenshot...");
+            ImGui::TextDisabled(" ");
+        }
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        // OK button removed — selection is saved automatically on mouse release.
+        if (ImGui::Button(tr("common.cancel"), ImVec2(90, 0)) ||
+            ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            closeCropModal();
+        }
+    }   // end of former BeginPopupModal block
+
+    // saveCroppedTemplate reads cropState_, so it must run before
+    // closeCropModal() zeroes it out.
+    if (doAutoSave) {
+        saveCroppedTemplate(ctx);
+        closeCropModal();
+        // The library reloaded its entries in-place (same pointer, new pixels).
+        // Invalidate the thumbnail cache so the new image is picked up next frame.
+        cachedTemplLib_ = nullptr;
+    }
+    ImGui::End();
 }
 
 }  // namespace poebot::gui::panels

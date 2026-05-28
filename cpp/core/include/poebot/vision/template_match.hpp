@@ -37,7 +37,7 @@ struct ImageBGRA {
 };
 
 struct MatchResult {
-    int   x = 0;          // top-left of the matched region in haystack coords
+    int   x = 0;          // centre of the matched region in haystack coords
     int   y = 0;
     float score = 0.0f;   // NCC score in [-1, 1]; 1.0 == perfect match
     float scale = 1.0f;   // Which template scale produced this match
@@ -71,6 +71,21 @@ std::optional<MatchResult> matchMultiScale(
     const ImageBGRA&          templ,
     const std::vector<float>& scales,
     const Rect*               searchArea = nullptr);
+
+// Multi-instance match: find up to `maxInstances` locations where the
+// template scores at least `minScore`. Uses simple non-max suppression
+// (suppress a template-sized rectangle around each accepted peak) so
+// returned matches don't overlap. Results are sorted by score (highest
+// first). Returns an empty vector if no match clears the threshold.
+//
+// Use this for "how many copies of icon X are visible right now" —
+// e.g., counting orb stacks on screen during auto-calibration.
+std::vector<MatchResult> matchAll(
+    const ImageBGRA& haystack,
+    const ImageBGRA& templ,
+    float            minScore     = 0.70f,
+    int              maxInstances = 10,
+    const Rect*      searchArea   = nullptr);
 
 // Bilinear resample a template to a new size. Exposed so callers can
 // pre-resize once and reuse the result instead of paying the bilinear

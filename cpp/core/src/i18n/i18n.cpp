@@ -65,9 +65,9 @@ const Table& enTable() {
         {"config.no_settings",             "No settings loaded."},
         {"config.no_active_profile_fmt",   "No active profile ('%s' not found)."},
         {"config.active_profile_fmt",      "Active profile: %s  [%s]"},
-        {"config.section.orbs",            "Currency / orb slots"},
-        {"config.section.anchors",         "Craft / map item grid anchors"},
-        {"config.section.inventory",       "Inventory deposit anchors"},
+        {"config.section.orbs",            "Currency"},
+        {"config.section.anchors",         "Craft"},
+        {"config.section.inventory",       "Warehouse"},
         {"config.unset",                   "(unset)"},
         {"config.button.reset_profile",    "Reset profile to defaults"},
         {"config.confirm_reset",           "Reset this profile to defaults?\nAll coords, craft / map / deposit settings, stats, and capture hotkeys will be reset."},
@@ -80,15 +80,14 @@ const Table& enTable() {
         {"settings.tab.auto_calibrate.tip",           "Auto-detect in-game coordinates via computer vision (planned)"},
 
         // Auto-calibrate tab (Settings panel → Auto Calibrate)
-        {"auto_cal.load",              "Load Templates"},
-        {"auto_cal.no_templates",      "No template files found in templates/."},
-        {"auto_cal.template_missing",  "(no template)"},
-        {"auto_cal.manual",            "Manual"},
-        {"auto_cal.start",             "Start Auto Calibrate"},
+        {"auto_cal.load",              "Reload"},
+        {"auto_cal.no_templates",      "No templates loaded. Put PNG files in the templates/ folder and click Reload."},
+        {"auto_cal.template_missing",  "(decode failed)"},
+        {"auto_cal.start",             "Start Calibrate"},
         {"auto_cal.err_no_game",       "Game window not found."},
         {"auto_cal.err_capture",       "Screen capture failed."},
-        {"auto_cal.no_match",          "No templates matched — check threshold or templates."},
-        {"auto_cal.done_fmt",          "%d coord(s) updated."},
+        {"auto_cal.no_match",          "No templates matched (threshold 0.70)."},
+        {"auto_cal.done_fmt",          "Matched %d instance(s) across %d template(s)."},
 
         // Hotkeys section (Settings panel, top). Action labels are short
         // imperatives so the modal's "Rebind: <label>" reads naturally.
@@ -216,15 +215,14 @@ const Table& zhTable() {
         {"settings.tab.auto_calibrate.tip",           "通过计算机视觉自动检测游戏坐标（规划中）"},
 
         // 自动校准分页
-        {"auto_cal.load",              "加载模板"},
-        {"auto_cal.no_templates",      "在 templates/ 中未找到模板文件。"},
-        {"auto_cal.template_missing",  "（无模板）"},
-        {"auto_cal.manual",            "手动"},
-        {"auto_cal.start",             "开始自动校准"},
+        {"auto_cal.load",              "重新扫描"},
+        {"auto_cal.no_templates",      "未加载任何模板。将 PNG 文件放入 templates/ 目录后点击重新扫描。"},
+        {"auto_cal.template_missing",  "（解码失败）"},
+        {"auto_cal.start",             "开始校准"},
         {"auto_cal.err_no_game",       "未找到游戏窗口。"},
         {"auto_cal.err_capture",       "截图失败。"},
-        {"auto_cal.no_match",          "无模板匹配，请检查阈值或模板文件。"},
-        {"auto_cal.done_fmt",          "已更新 %d 个坐标。"},
+        {"auto_cal.no_match",          "无模板匹配（阈值 0.70）。"},
+        {"auto_cal.done_fmt",          "匹配到 %d 个实例（覆盖 %d 个模板）。"},
 
         // 热键自定义（设置面板顶部）
         {"settings.section.hotkeys",                  "热键"},

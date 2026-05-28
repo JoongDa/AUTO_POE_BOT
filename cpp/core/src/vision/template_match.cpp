@@ -88,11 +88,83 @@ std::optional<MatchResult> match(
     cv::minMaxLoc(result, nullptr, &maxVal, nullptr, &maxLoc);
 
     MatchResult mr;
-    mr.x     = maxLoc.x + roiOffset.x;
-    mr.y     = maxLoc.y + roiOffset.y;
+    mr.x     = maxLoc.x + roiOffset.x + templ.width  / 2;
+    mr.y     = maxLoc.y + roiOffset.y + templ.height / 2;
     mr.score = static_cast<float>(maxVal);
     mr.scale = 1.0f;
     return mr;
+}
+
+std::vector<MatchResult> matchAll(
+    const ImageBGRA& haystack,
+    const ImageBGRA& templ,
+    float            minScore,
+    int              maxInstances,
+    const Rect*      searchArea) {
+
+    std::vector<MatchResult> matches;
+
+    if (haystack.width <= 0 || haystack.height <= 0 ||
+        templ.width    <= 0 || templ.height    <= 0 ||
+        maxInstances   <= 0) {
+        return matches;
+    }
+    if (templ.width > haystack.width || templ.height > haystack.height) {
+        return matches;
+    }
+
+    cv::Mat hayGray, tplGray;
+    cv::cvtColor(toMat(haystack), hayGray, cv::COLOR_BGRA2GRAY);
+    cv::cvtColor(toMat(templ),    tplGray, cv::COLOR_BGRA2GRAY);
+
+    cv::Mat   roi      = hayGray;
+    cv::Point roiOffset{0, 0};
+    if (searchArea) {
+        const int x = std::max(0, searchArea->x);
+        const int y = std::max(0, searchArea->y);
+        const int w = std::min(hayGray.cols - x, searchArea->w);
+        const int h = std::min(hayGray.rows - y, searchArea->h);
+        if (w < templ.width || h < templ.height) return matches;
+        roi       = hayGray(cv::Rect(x, y, w, h));
+        roiOffset = {x, y};
+    }
+
+    cv::Mat result;
+    cv::matchTemplate(roi, tplGray, result, cv::TM_CCOEFF_NORMED);
+
+    // Non-max suppression loop: repeatedly take the global max, accept it,
+    // then zero out a template-sized window around it so the next iteration
+    // doesn't re-find the same blob. Suppression radius = template size
+    // (the inscribed window) — this is the standard NMS trick for
+    // matchTemplate and prevents nearly-overlapping duplicates without
+    // requiring per-axis tuning.
+    matches.reserve(static_cast<std::size_t>(maxInstances));
+    while (static_cast<int>(matches.size()) < maxInstances) {
+        double    maxVal{};
+        cv::Point maxLoc{};
+        cv::minMaxLoc(result, nullptr, &maxVal, nullptr, &maxLoc);
+        if (maxVal < minScore) break;
+
+        MatchResult mr;
+        mr.x     = maxLoc.x + roiOffset.x + templ.width  / 2;
+        mr.y     = maxLoc.y + roiOffset.y + templ.height / 2;
+        mr.score = static_cast<float>(maxVal);
+        mr.scale = 1.0f;
+        matches.push_back(mr);
+
+        // Suppress a (tpl.width × tpl.height) box centred on the peak.
+        // Clamp to result bounds — result is (haystack - tpl + 1) in each
+        // axis so the suppression rect can sit right against the edge.
+        const int sx = std::max(0, maxLoc.x - templ.width  / 2);
+        const int sy = std::max(0, maxLoc.y - templ.height / 2);
+        const int sw = std::min(result.cols - sx, templ.width);
+        const int sh = std::min(result.rows - sy, templ.height);
+        if (sw > 0 && sh > 0) {
+            result(cv::Rect(sx, sy, sw, sh)).setTo(cv::Scalar(-1.0));
+        }
+    }
+
+    return matches;
 }
 
 std::optional<MatchResult> matchMultiScale(

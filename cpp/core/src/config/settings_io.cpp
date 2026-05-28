@@ -159,6 +159,21 @@ inline void from_json(const json& j, DepositSettings& d) {
     d.rows = readGridDimension(j, "deposit", "rows", 5, 1, 12);
 }
 
+inline void to_json(json& j, const CalibratedCoord& c) {
+    j = json{
+        {"x",     c.pos.x},
+        {"y",     c.pos.y},
+        {"qty",   c.qty},
+        {"score", c.score},
+    };
+}
+inline void from_json(const json& j, CalibratedCoord& c) {
+    c.pos.x  = j.value("x", 0);
+    c.pos.y  = j.value("y", 0);
+    c.qty    = j.value("qty", 0);
+    c.score  = j.value("score", 0.0f);
+}
+
 inline void to_json(json& j, const ProfileStats& s) {
     j = json{
         {"craftOps", s.craftOps},
@@ -184,6 +199,7 @@ inline void to_json(json& j, const GameProfile& p) {
         {"map", p.map},
         {"deposit", p.deposit},
         {"stats", p.stats},
+        {"calibrated", p.calibrated},
     };
 }
 inline void from_json(const json& j, GameProfile& p) {
@@ -195,6 +211,10 @@ inline void from_json(const json& j, GameProfile& p) {
     p.map = j.value("map", MapSettings{});
     p.deposit = j.value("deposit", DepositSettings{});
     p.stats = j.value("stats", ProfileStats{});
+    // `calibrated` is new in this schema version — older files won't have it,
+    // so j.value falls back to an empty map and the user just sees an empty
+    // Auto Calibrate tab until they click "Start Auto Calibrate".
+    p.calibrated = j.value("calibrated", std::unordered_map<std::string, CalibratedCoord>{});
 }
 
 inline void to_json(json& j, const Settings& s) {

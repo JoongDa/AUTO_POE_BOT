@@ -134,4 +134,23 @@ std::optional<CapturedImage> captureVirtualScreen() {
     return img;
 }
 
+std::optional<CapturedImage> capturePrimaryScreen() {
+    // GetSystemMetrics(SM_CXSCREEN/SM_CYSCREEN) returns the primary monitor
+    // resolution, not the full virtual desktop. BitBlt from (0,0) on the
+    // screen DC gives pixels whose coordinates match Win32 cursor / screen
+    // positions on the primary display directly — no multi-monitor offset.
+    const int w = ::GetSystemMetrics(SM_CXSCREEN);
+    const int h = ::GetSystemMetrics(SM_CYSCREEN);
+
+    HDC screenDC = ::GetDC(nullptr);
+    if (!screenDC) {
+        spdlog::warn("screen_capture: GetDC(NULL) failed: {}", ::GetLastError());
+        return std::nullopt;
+    }
+
+    auto img = captureFromDC(screenDC, 0, 0, w, h, "capturePrimaryScreen");
+    ::ReleaseDC(nullptr, screenDC);
+    return img;
+}
+
 }  // namespace poebot::sys

@@ -7,38 +7,43 @@
 
 namespace poebot::vision {
 
-// One coordinate template loaded from disk.
+// One template loaded from disk. The basename of the PNG file (without
+// extension) becomes the coord name and is also the key under which any
+// matches end up in the profile's calibrated map.
 struct TemplateEntry {
-    std::string coordName;        // "orb1", "baseItem", etc.
-    ImageBGRA   image;            // BGRA pixels at original (file) resolution
-    bool        loaded = false;   // false when PNG was missing or unreadable
+    std::string name;           // PNG basename, e.g. "chaos", "scour", "orb_currency"
+    ImageBGRA   image;          // BGRA pixels at the file's original resolution
+    bool        loaded = false; // false if the file failed to decode
 };
 
-// Scans a directory for PNG files whose basenames match the nine coordinate
-// fields understood by findCoordByName():
-//   orb1.png, orb2.png, orb3.png,
-//   baseItem.png, p01Item.png, p10Item.png,
-//   invBase.png, invP01.png, invP10.png
+// Scans a directory for arbitrary PNG files. Each `*.png` becomes a coord
+// candidate — there is no hardcoded list. The basename (without extension)
+// is the canonical name used everywhere downstream:
+//   - the row label in the Auto Calibrate UI
+//   - the key in GameProfile::calibrated
+//   - the suffix root when one template matches multiple instances
+//     ("chaos_1", "chaos_2", …)
 //
-// Missing files yield entries with loaded=false so the UI always shows a row
-// for every field regardless of which templates are present on disk.
+// Failed-to-decode files are kept in entries() with loaded=false so the
+// UI can still warn about them.
 class TemplateLibrary {
 public:
-    // Display order. File names in the templates directory are derived from
-    // these by appending ".png".
-    static const std::vector<std::string>& coordNames();
-
-    // (Re)load from `templatesDir`. Clears any previous state first. Returns
-    // true when at least one PNG loaded successfully.
+    // (Re)load from `templatesDir`. Clears previous state first. Returns
+    // true when at least one PNG decoded successfully.
     bool load(const std::filesystem::path& templatesDir);
 
-    // Reload from the directory last passed to load().
     bool reload() { return load(dir_); }
 
     const std::filesystem::path&      dir()     const noexcept { return dir_;     }
     const std::vector<TemplateEntry>& entries() const noexcept { return entries_; }
     bool empty()     const noexcept { return entries_.empty();  }
     bool anyLoaded() const noexcept;
+
+    // Replace (or create) <name>.png inside the current templates directory.
+    // The image must be BGRA (same layout produced by load()). Writes
+    // atomically via a temp-file rename, then calls reload() to refresh the
+    // in-memory entry list. Returns false on encode or I/O failure.
+    bool replaceTemplate(const std::string& name, const ImageBGRA& image);
 
 private:
     std::filesystem::path      dir_;

@@ -2,6 +2,7 @@
 #include <poebot/coords.hpp>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 
 namespace poebot::config {
 
@@ -59,6 +60,18 @@ struct ProfileStats {
     int mapHits = 0;
 };
 
+// One row in the Auto-Calibrate "coord pool". Keyed by template basename
+// (with a trailing "_N" suffix when one template matches multiple
+// instances, e.g. "chaos_1" / "chaos_2"). Populated by the OpenCV
+// template-matching pipeline; future task code reads from here.
+struct CalibratedCoord {
+    ClientPoint pos{};            // center of the matched region, in client coords
+    int         qty   = 0;        // match count for the parent template (same
+                                  // value across all rows of one group); 0 when
+                                  // no match has been recorded yet
+    float       score = 0.0f;     // TM_CCOEFF_NORMED score in [-1, 1]
+};
+
 // Full game profile: game identification + all coords + task settings.
 struct GameProfile {
     std::string name;                   // profile key, e.g. "poe1"
@@ -69,6 +82,13 @@ struct GameProfile {
     MapSettings map{};
     DepositSettings deposit{};
     ProfileStats stats{};
+
+    // CV-driven coord pool, keyed by template basename (or "<name>_N"
+    // when matchAll returns multiple instances). Parallel to `coords`
+    // for now — `coords` stays as-is for the existing CraftTask/MapTask/
+    // DepositTask consumers; `calibrated` is the new template-driven
+    // pool intended for future tasks.
+    std::unordered_map<std::string, CalibratedCoord> calibrated;
 };
 
 // Factory: return the default profile for a given version key ("poe1" / "poe2").

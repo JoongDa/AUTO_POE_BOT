@@ -7,6 +7,7 @@
 #include <poebot/hotkey/binding.hpp>
 #include <poebot/hotkey/hotkey_manager.hpp>
 #include <poebot/task/task_runner.hpp>
+#include <poebot/vision/template_library.hpp>
 #include <poebot/win/window.hpp>
 
 #include <chrono>
@@ -110,6 +111,10 @@ private:
 
     // Phase 3.2
     poebot::task::TaskRunner                taskRunner_;
+
+    // CV template pool. Loaded once after settingsRoot_ is computed; shared
+    // (read-only) with panels via PanelContext::templates.
+    poebot::vision::TemplateLibrary         templateLib_;
 
     bool                                        wantExit_    = false;
     std::chrono::steady_clock::time_point       lastSaveAt_{};
