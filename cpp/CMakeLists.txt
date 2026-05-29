@@ -38,6 +38,7 @@ endif()
 find_package(imgui CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
+find_package(unofficial-imgui-node-editor CONFIG REQUIRED)
 
 # ---------------- OpenCV (local install) ----------------
 # OpenCV_DIR is set in CMakePresets.json → build/x64/vc17/lib

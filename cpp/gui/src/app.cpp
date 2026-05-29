@@ -6,6 +6,7 @@
 #include <poebot/gui/panels/log_panel.hpp>
 #include <poebot/gui/panels/main_layout.hpp>
 #include <poebot/gui/panels/map_panel.hpp>
+#include <poebot/gui/panels/workflow_panel.hpp>
 
 #include <poebot/config/affix_library.hpp>
 #include <poebot/config/settings_io.hpp>
@@ -104,6 +105,7 @@ int App::run(HINSTANCE hInstance, int nCmdShow) {
     panels_.push_back(std::make_unique<panels::CraftPanel>());
     panels_.push_back(std::make_unique<panels::MapPanel>());
     panels_.push_back(std::make_unique<panels::DepositPanel>());
+    panels_.push_back(std::make_unique<panels::WorkflowPanel>());
     panels_.push_back(std::make_unique<panels::LogPanel>());
 
     panelCtx_.settings        = &settings_;

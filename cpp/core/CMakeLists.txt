@@ -18,6 +18,9 @@ add_library(poebot-core STATIC
     src/hotkey/binding.cpp
     src/hotkey/hotkey_manager.cpp
     src/item/affix_matcher.cpp
+    src/flow/serialize.cpp
+    src/flow/node_registry.cpp
+    src/flow/executor.cpp
     src/task/task_runner.cpp
     src/task/deposit_task.cpp
     src/task/craft_task.cpp

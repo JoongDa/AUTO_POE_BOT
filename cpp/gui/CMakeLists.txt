@@ -12,6 +12,7 @@ add_executable(poe-bot WIN32
     src/panels/map_panel.cpp
     src/panels/deposit_panel.cpp
     src/panels/log_panel.cpp
+    src/panels/workflow_panel.cpp
     res/app.rc
 )
 
@@ -31,6 +32,7 @@ target_link_libraries(poe-bot
     PRIVATE
         poebot-core
         imgui::imgui
+        unofficial::imgui-node-editor::imgui-node-editor
         spdlog::spdlog
         d3d11
         dxgi

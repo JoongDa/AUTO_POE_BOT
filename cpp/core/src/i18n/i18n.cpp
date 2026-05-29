@@ -33,6 +33,7 @@ const Table& enTable() {
         {"panel.craft",                    "Craft"},
         {"panel.map",                      "Map"},
         {"panel.deposit",                  "Deposit"},
+        {"panel.workflow",                 "Workflow"},
         {"panel.log",                      "Log"},
 
         // Right-aligned status
@@ -172,6 +173,7 @@ const Table& zhTable() {
         {"panel.craft",                    "改造"},
         {"panel.map",                      "地图"},
         {"panel.deposit",                  "入库"},
+        {"panel.workflow",                 "工作流"},
         {"panel.log",                      "日志"},
 
         // 状态
